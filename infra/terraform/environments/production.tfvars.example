@@ -1,0 +1,12 @@
+environment = "production"
+namespace   = "opsmind-production"
+
+resource_quota = {
+  pods                   = "200"
+  "requests.cpu"         = "64"
+  "requests.memory"      = "128Gi"
+  "limits.cpu"            = "128"
+  "limits.memory"         = "256Gi"
+  "requests.storage"      = "500Gi"
+  persistentvolumeclaims = "20"
+}

@@ -1,0 +1,38 @@
+groups:
+  - name: service-sli
+    rules:
+      - alert: HighErrorRate
+        expr: sum by (service) (rate(http_requests_total{status=~"5.."}[5m])) / clamp_min(sum by (service) (rate(http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.service }} HTTP error rate is above 5%"
+          description: "Five-minute server error ratio has exceeded 5%."
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.service }} p95 latency is above one second"
+          description: "Five-minute p95 HTTP latency has exceeded one second."
+      - alert: ServiceUnavailable
+        expr: up{job=~"opsmind|shopstack"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Scrape target {{ $labels.instance }} is unavailable"
+          description: "Prometheus has failed to scrape this service for two minutes."
+      - alert: RepeatedPodRestarts
+        expr: increase(kube_pod_container_status_restarts_total[15m]) >= 3
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} restarted repeatedly"
+          description: "A container restarted at least three times in 15 minutes. Requires kube-state-metrics."
+      - alert: DependencyFailureRate
+        expr: sum by (service, dependency) (rate(dependency_requests_total{outcome="error"}[5m])) / clamp_min(sum by (service, dependency) (rate(dependency_requests_total[5m])), 0.001) > 0.1
+        for: 3m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.service }} dependency {{ $labels.dependency }} is failing"
+          description: "Dependency error ratio has exceeded 10%."

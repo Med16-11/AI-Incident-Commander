@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-api}
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: opsmind-api}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-incident-engine}
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: opsmind-incident-engine}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-remediation-engine}
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: opsmind-remediation-engine}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-notification-service}
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: opsmind-notification-service}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-worker}
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: opsmind-worker}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-web}
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: opsmind-web}}

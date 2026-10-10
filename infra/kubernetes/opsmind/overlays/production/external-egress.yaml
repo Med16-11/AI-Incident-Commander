@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-managed-services-egress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: opsmind}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: "${OPSMIND_DB_CIDR}"}}]
+      ports: [{protocol: TCP, port: 5432}]
+    - to: [{ipBlock: {cidr: "${OPSMIND_REDIS_CIDR}"}}]
+      ports: [{protocol: TCP, port: 6379}]
+    - to: [{ipBlock: {cidr: "${OPSMIND_OBSERVABILITY_CIDR}"}}]
+      ports:
+        - {protocol: TCP, port: 9090}
+        - {protocol: TCP, port: 3100}
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-external-metrics-scraper}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: opsmind}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ipBlock: {cidr: "${OPSMIND_METRICS_CIDR}"}}]
+      ports: [{protocol: TCP, port: 8000}]

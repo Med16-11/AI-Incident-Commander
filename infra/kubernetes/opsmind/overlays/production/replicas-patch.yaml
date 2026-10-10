@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-api}
+spec: {replicas: 3}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-web}
+spec: {replicas: 3}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-incident-engine}
+spec: {replicas: 2}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-remediation-engine}
+spec: {replicas: 2}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-notification-service}
+spec: {replicas: 2}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-worker}
+spec: {replicas: 2}

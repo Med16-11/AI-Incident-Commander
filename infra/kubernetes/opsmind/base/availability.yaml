@@ -1,0 +1,106 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: opsmind-api}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-api}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: opsmind-incident-engine}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-incident-engine}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: opsmind-detection-engine}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-detection-engine}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: opsmind-remediation-engine}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-remediation-engine}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: opsmind-notification-service}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-notification-service}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: opsmind-worker}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-worker}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-api}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: opsmind-api}
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 80}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-incident-engine}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: opsmind-incident-engine}
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 80}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-remediation-engine}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: opsmind-remediation-engine}
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 80}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-notification-service}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: opsmind-notification-service}
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 80}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-worker}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: opsmind-worker}
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 80}}

@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opsmind-migrations-${OPSMIND_RELEASE_ID}
+  labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: migration}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: migration, app.kubernetes.io/name: opsmind-migrations}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: migrate
+          image: ${OPSMIND_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [alembic, upgrade, head]
+          envFrom: [{configMapRef: {name: opsmind-config}}]
+          env:
+            - {name: OPSMIND_DATABASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_DATABASE_URL}}}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}

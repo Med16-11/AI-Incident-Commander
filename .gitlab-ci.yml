@@ -1,0 +1,280 @@
+stages:
+  - lint
+  - test
+  - security
+  - build
+  - scan
+  - integration-test
+  - package
+  - deploy
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
+  KUBECTL_VERSION: "v1.32.3"
+  KUBECONFORM_VERSION: "v0.7.0"
+  COSIGN_VERSION: "v2.4.1"
+  PYTHONUNBUFFERED: "1"
+
+default:
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+.python-job:
+  image:
+    name: ghcr.io/astral-sh/uv:0.12.22-python3.12-bookworm-slim
+    entrypoint: [""]
+  cache:
+    key:
+      files: [uv.lock]
+    paths: [.cache/uv]
+  before_script:
+    - uv sync --frozen --extra dev
+
+python-lint:
+  extends: .python-job
+  stage: lint
+  script:
+    - uv run ruff check .
+    - uv run ruff format --check .
+    - uv run mypy apps packages tests
+
+frontend-lint:
+  image: node:22.14.0-alpine3.21
+  stage: lint
+  cache:
+    key:
+      files: [apps/web/package-lock.json]
+    paths: [.cache/npm]
+  script:
+    - cd apps/web
+    - npm ci --cache "$NPM_CONFIG_CACHE" --prefer-offline
+    - npm run build
+
+python-unit-tests:
+  extends: .python-job
+  stage: test
+  script:
+    - uv run pytest tests/unit --junitxml=python-unit-junit.xml
+  artifacts:
+    when: always
+    reports:
+      junit: python-unit-junit.xml
+    expire_in: 14 days
+
+frontend-tests:
+  image: node:22.14.0-alpine3.21
+  stage: test
+  script:
+    - cd apps/web
+    - npm test
+
+dependency-scan:
+  image:
+    name: aquasec/trivy:0.59.1
+    entrypoint: [""]
+  stage: security
+  variables:
+    GIT_STRATEGY: fetch
+  script:
+    - trivy fs --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 --format json --output dependency-scan.json --skip-dirs apps/web/node_modules --skip-dirs apps/web/dist .
+  artifacts:
+    when: always
+    paths: [dependency-scan.json]
+    expire_in: 30 days
+
+terraform-validate:
+  image:
+    name: hashicorp/terraform:1.11.4
+    entrypoint: [""]
+  stage: security
+  before_script: []
+  script:
+    - cd infra/terraform
+    - terraform fmt -check -recursive
+    - terraform init -backend=false -input=false
+    - terraform validate
+
+kubernetes-manifest-validation:
+  image: python:3.12.9-slim-bookworm
+  stage: security
+  before_script:
+    - apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates curl gettext-base tar && rm -rf /var/lib/apt/lists/*
+    - curl --fail --silent --show-error --location "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" --output /usr/local/bin/kubectl
+    - curl --fail --silent --show-error --location "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" --output /tmp/kubectl.sha256
+    - echo "$(cat /tmp/kubectl.sha256)  /usr/local/bin/kubectl" | sha256sum --check
+    - chmod +x /usr/local/bin/kubectl
+    - curl --fail --silent --show-error --location "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" --output /tmp/kubeconform-linux-amd64.tar.gz
+    - curl --fail --silent --show-error --location "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS" --output /tmp/kubeconform-checksums.txt
+    - (cd /tmp && grep 'kubeconform-linux-amd64.tar.gz' kubeconform-checksums.txt | sha256sum --check)
+    - tar -xzf /tmp/kubeconform-linux-amd64.tar.gz -C /usr/local/bin kubeconform
+    - chmod +x /usr/local/bin/kubeconform
+  script:
+    - export OPSMIND_IMAGE="registry.invalid/opsmind:${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}"
+    - export OPSMIND_WEB_IMAGE="registry.invalid/opsmind-web:${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}"
+    - export OPSMIND_RELEASE_ID="${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}"
+    - export OPSMIND_NAMESPACE=opsmind-validation OPSMIND_TARGET_NAMESPACE=shopstack-validation
+    - export OPSMIND_KUBERNETES_API_CIDR=192.0.2.10/32 OPSMIND_KUBERNETES_API_PORT=6443
+    - export OPSMIND_DB_CIDR=192.0.2.20/32 OPSMIND_REDIS_CIDR=192.0.2.21/32
+    - export OPSMIND_OBSERVABILITY_CIDR=192.0.2.0/24 OPSMIND_METRICS_CIDR=192.0.2.30/32
+    - for environment in dev staging production; do kubectl kustomize "infra/kubernetes/opsmind/overlays/$environment" | envsubst '${OPSMIND_IMAGE} ${OPSMIND_WEB_IMAGE} ${OPSMIND_RELEASE_ID} ${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE} ${OPSMIND_KUBERNETES_API_CIDR} ${OPSMIND_KUBERNETES_API_PORT} ${OPSMIND_DB_CIDR} ${OPSMIND_REDIS_CIDR} ${OPSMIND_OBSERVABILITY_CIDR} ${OPSMIND_METRICS_CIDR}' | kubeconform -strict -summary -ignore-missing-schemas; done
+    - envsubst '${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE}' < infra/kubernetes/opsmind/target-rbac.yaml | kubeconform -strict -summary -ignore-missing-schemas
+    - kubectl kustomize infra/kubernetes/opsmind/dev-dependencies | kubeconform -strict -summary -ignore-missing-schemas
+
+build-images:
+  image:
+    name: moby/buildkit:v0.20.2-rootless
+    entrypoint: [""]
+  stage: build
+  before_script:
+    - export DOCKER_CONFIG="$CI_PROJECT_DIR/.docker"
+    - mkdir -p "$DOCKER_CONFIG"
+    - REGISTRY_AUTH="$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')"
+    - printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$REGISTRY_AUTH" > "$DOCKER_CONFIG/config.json"
+    - export OPSMIND_IMAGE_TAG="${CI_COMMIT_SHA}-${CI_PIPELINE_ID}"
+    - export OPSMIND_IMAGE_REPOSITORY="${CI_REGISTRY_IMAGE}/opsmind"
+    - export OPSMIND_WEB_IMAGE_REPOSITORY="${CI_REGISTRY_IMAGE}/opsmind-web"
+  script:
+    - buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=. --local dockerfile=. --opt filename=infra/docker/Dockerfile --output "type=image,name=${OPSMIND_IMAGE_REPOSITORY}:${OPSMIND_IMAGE_TAG},push=true" --metadata-file opsmind-metadata.json
+    - buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=. --local dockerfile=. --opt filename=infra/docker/web.Dockerfile --output "type=image,name=${OPSMIND_WEB_IMAGE_REPOSITORY}:${OPSMIND_IMAGE_TAG},push=true" --metadata-file opsmind-web-metadata.json
+    - export OPSMIND_IMAGE_DIGEST="$(awk -F '"' '/containerimage.digest/ {print $4; exit}' opsmind-metadata.json)"
+    - export OPSMIND_WEB_IMAGE_DIGEST="$(awk -F '"' '/containerimage.digest/ {print $4; exit}' opsmind-web-metadata.json)"
+    - test -n "$OPSMIND_IMAGE_DIGEST" && test -n "$OPSMIND_WEB_IMAGE_DIGEST"
+    - printf 'OPSMIND_IMAGE=%s@%s\nOPSMIND_WEB_IMAGE=%s@%s\nOPSMIND_IMAGE_TAG=%s\nOPSMIND_RELEASE_ID=%s\nOPSMIND_IMAGE_DIGEST=%s\nOPSMIND_WEB_IMAGE_DIGEST=%s\n' "$OPSMIND_IMAGE_REPOSITORY" "$OPSMIND_IMAGE_DIGEST" "$OPSMIND_WEB_IMAGE_REPOSITORY" "$OPSMIND_WEB_IMAGE_DIGEST" "$OPSMIND_IMAGE_TAG" "${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}" "$OPSMIND_IMAGE_DIGEST" "$OPSMIND_WEB_IMAGE_DIGEST" > build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+    paths: [build.env, opsmind-metadata.json, opsmind-web-metadata.json]
+    expire_in: 30 days
+
+image-scan:
+  image:
+    name: aquasec/trivy:0.59.1
+    entrypoint: [""]
+  stage: scan
+  variables:
+    TRIVY_USERNAME: "$CI_REGISTRY_USER"
+    TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+  script:
+    - |
+      set +e
+      trivy image --exit-code 1 --severity HIGH,CRITICAL --format json --output opsmind-image-scan.json "$OPSMIND_IMAGE"
+      api_status=$?
+      trivy image --exit-code 1 --severity HIGH,CRITICAL --format json --output opsmind-web-image-scan.json "$OPSMIND_WEB_IMAGE"
+      web_status=$?
+      set -e
+      test "$api_status" -eq 0 && test "$web_status" -eq 0
+  artifacts:
+    when: always
+    paths: [opsmind-image-scan.json, opsmind-web-image-scan.json]
+    expire_in: 30 days
+
+integration-tests:
+  extends: .python-job
+  stage: integration-test
+  services:
+    - name: postgres:16.6-alpine
+      alias: postgres
+      variables:
+        POSTGRES_DB: opsmind
+        POSTGRES_USER: opsmind
+        POSTGRES_PASSWORD: opsmind-ci-password
+    - name: redis:7.4-alpine
+      alias: redis
+  variables:
+    OPSMIND_DATABASE_URL: "postgresql+psycopg://opsmind:opsmind-ci-password@postgres:5432/opsmind"
+    OPSMIND_REDIS_URL: "redis://redis:6379/0"
+  script:
+    - uv run pytest tests/integration --junitxml=python-integration-junit.xml
+    - uv run alembic upgrade head
+    - uv run python scripts/ci-integration-smoke.py
+  artifacts:
+    when: always
+    reports:
+      junit: python-integration-junit.xml
+    expire_in: 14 days
+
+sbom:
+  image:
+    name: aquasec/trivy:0.59.1
+    entrypoint: [""]
+  stage: package
+  variables:
+    TRIVY_USERNAME: "$CI_REGISTRY_USER"
+    TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+  script:
+    - trivy image --format cyclonedx --output opsmind-api.sbom.cdx.json "$OPSMIND_IMAGE"
+    - trivy image --format cyclonedx --output opsmind-web.sbom.cdx.json "$OPSMIND_WEB_IMAGE"
+  artifacts:
+    paths: [opsmind-api.sbom.cdx.json, opsmind-web.sbom.cdx.json]
+    expire_in: 1 year
+
+sign-images:
+  image:
+    name: alpine:3.21.3
+  stage: package
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  variables:
+    COSIGN_REGISTRY_USERNAME: "$CI_REGISTRY_USER"
+    COSIGN_REGISTRY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+  before_script:
+    - apk add --no-cache ca-certificates curl
+    - curl --fail --silent --show-error --location "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64" --output /usr/local/bin/cosign-linux-amd64
+    - curl --fail --silent --show-error --location "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign_checksums.txt" --output /tmp/cosign-checksums.txt
+    - (cd /usr/local/bin && grep 'cosign-linux-amd64$' /tmp/cosign-checksums.txt | sha256sum --check)
+    - chmod +x /usr/local/bin/cosign-linux-amd64 && mv /usr/local/bin/cosign-linux-amd64 /usr/local/bin/cosign
+  script:
+    - cosign sign --yes --identity-token "$SIGSTORE_ID_TOKEN" "$OPSMIND_IMAGE"
+    - cosign sign --yes --identity-token "$SIGSTORE_ID_TOKEN" "$OPSMIND_WEB_IMAGE"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+.deploy-template:
+  image:
+    name: dtzar/helm-kubectl:3.17.1
+    entrypoint: [""]
+  before_script:
+    - apk add --no-cache bash gettext
+    - test -n "${KUBE_CONFIG:-}" || (echo 'KUBE_CONFIG file variable is required' >&2; exit 2)
+    - export KUBECONFIG="$KUBE_CONFIG"
+    - export OPSMIND_RELEASE_ID
+  interruptible: false
+  retry: 0
+
+deploy-staging:
+  extends: .deploy-template
+  stage: deploy
+  environment:
+    name: staging
+    deployment_tier: staging
+  resource_group: opsmind-staging
+  script:
+    - bash scripts/deploy-k8s.sh staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+deploy-production:
+  extends: .deploy-template
+  stage: deploy
+  environment:
+    name: production
+    deployment_tier: production
+  resource_group: opsmind-production
+  script:
+    - bash scripts/deploy-k8s.sh production
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

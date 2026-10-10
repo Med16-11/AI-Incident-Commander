@@ -1,0 +1,379 @@
+name: opsmind
+
+x-app-environment: &app-environment
+  OPSMIND_ENVIRONMENT: ${OPSMIND_ENVIRONMENT:-local}
+  OPSMIND_LOCAL_DEMO_AUTH_ENABLED: ${OPSMIND_LOCAL_DEMO_AUTH_ENABLED:-false}
+  OPSMIND_LOG_LEVEL: ${OPSMIND_LOG_LEVEL:-INFO}
+  OPSMIND_LOG_JSON: ${OPSMIND_LOG_JSON:-true}
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OPSMIND_PROMETHEUS_URL: http://prometheus:9090
+  OPSMIND_LOKI_URL: http://loki:3100
+  OPSMIND_DETECTION_PROMETHEUS_JOB_REGEX: ${OPSMIND_DETECTION_PROMETHEUS_JOB_REGEX:-shopstack}
+  OPSMIND_DETECTION_POLL_INTERVAL_SECONDS: ${OPSMIND_DETECTION_POLL_INTERVAL_SECONDS:-30}
+  OPSMIND_DETECTION_BASELINE_WINDOW: ${OPSMIND_DETECTION_BASELINE_WINDOW:-30}
+  OPSMIND_DETECTION_BASELINE_MIN_SAMPLES: ${OPSMIND_DETECTION_BASELINE_MIN_SAMPLES:-8}
+  OPSMIND_DETECTION_BASELINE_DEVIATION_RATIO: ${OPSMIND_DETECTION_BASELINE_DEVIATION_RATIO:-0.50}
+  OPSMIND_DETECTION_ERROR_RATE_THRESHOLD: ${OPSMIND_DETECTION_ERROR_RATE_THRESHOLD:-0.05}
+  OPSMIND_DETECTION_DEPENDENCY_ERROR_RATE_THRESHOLD: ${OPSMIND_DETECTION_DEPENDENCY_ERROR_RATE_THRESHOLD:-0.10}
+  OPSMIND_DETECTION_LATENCY_P95_THRESHOLD_SECONDS: ${OPSMIND_DETECTION_LATENCY_P95_THRESHOLD_SECONDS:-1.0}
+  OPSMIND_DETECTION_Z_SCORE_THRESHOLD: ${OPSMIND_DETECTION_Z_SCORE_THRESHOLD:-3.5}
+  OPSMIND_DETECTION_TRAFFIC_DROP_RATIO: ${OPSMIND_DETECTION_TRAFFIC_DROP_RATIO:-0.50}
+  OPSMIND_DETECTION_LOG_OCCURRENCE_THRESHOLD: ${OPSMIND_DETECTION_LOG_OCCURRENCE_THRESHOLD:-5}
+  OPSMIND_DETECTION_LOG_WINDOW_SECONDS: ${OPSMIND_DETECTION_LOG_WINDOW_SECONDS:-60}
+  OPSMIND_DETECTION_CORRELATION_WINDOW_SECONDS: ${OPSMIND_DETECTION_CORRELATION_WINDOW_SECONDS:-120}
+  OPSMIND_DETECTION_DEDUPLICATION_TTL_SECONDS: ${OPSMIND_DETECTION_DEDUPLICATION_TTL_SECONDS:-900}
+  OPSMIND_CORRELATION_BEFORE_SECONDS: ${OPSMIND_CORRELATION_BEFORE_SECONDS:-600}
+  OPSMIND_CORRELATION_AFTER_SECONDS: ${OPSMIND_CORRELATION_AFTER_SECONDS:-300}
+  OPSMIND_CORRELATION_API_TOKEN: ${OPSMIND_CORRELATION_API_TOKEN:-}
+  OPSMIND_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-opsmind}@postgres:5432/${POSTGRES_DB:-opsmind}
+  OPSMIND_REDIS_URL: redis://redis:6379/0
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: infra/docker/Dockerfile
+  restart: unless-stopped
+  environment:
+    <<: *app-environment
+  healthcheck:
+    test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+
+x-shopstack-env: &shopstack-env
+  SHOPSTACK_DB_HOST: shopstack-postgres
+  SHOPSTACK_DB_PORT: "5432"
+  SHOPSTACK_DB_NAME: shopstack
+  SHOPSTACK_DB_USER: shopstack
+  SHOPSTACK_DB_PASSWORD: ${SHOPSTACK_DB_PASSWORD:?Set SHOPSTACK_DB_PASSWORD in .env; see .env.example}
+  SHOPSTACK_REDIS_URL: redis://shopstack-redis:6379/1
+  SHOPSTACK_USER_SERVICE_URL: http://shopstack-user-service:8000
+  SHOPSTACK_ORDER_SERVICE_URL: http://shopstack-order-service:8000
+  SHOPSTACK_INVENTORY_SERVICE_URL: http://shopstack-inventory-service:8000
+  SHOPSTACK_PAYMENT_SERVICE_URL: http://shopstack-payment-service:8000
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+
+x-shopstack-app: &shopstack-app
+  build:
+    context: .
+    dockerfile: infra/docker/Dockerfile
+  image: opsmind-shopstack:local
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/ready', timeout=2)"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 20s
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    restart: unless-stopped
+    ports: ["127.0.0.1:5173:8080"]
+    depends_on:
+      api: {condition: service_healthy}
+      remediation-engine: {condition: service_started}
+      prometheus: {condition: service_started}
+
+  postgres:
+    image: postgres:16-alpine
+    # Local development only: trust auth is isolated to this Compose network.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-opsmind}
+      POSTGRES_USER: ${POSTGRES_USER:-opsmind}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:${OPSMIND_POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opsmind} -d ${POSTGRES_DB:-opsmind}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${OPSMIND_REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *app
+    command: ["uvicorn", "opsmind_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      <<: *app-environment
+      OPSMIND_LOCAL_DEMO_TOKEN: ${OPSMIND_LOCAL_DEMO_TOKEN:-}
+
+  incident-engine:
+    <<: *app
+    command: ["uvicorn", "opsmind_incident_engine.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8001:8000"]
+    environment:
+      <<: *app-environment
+      OPSMIND_INVESTIGATION_API_TOKEN: ${OPSMIND_INVESTIGATION_API_TOKEN:-}
+      OPSMIND_LLM_BASE_URL: ${OPSMIND_LLM_BASE_URL:-}
+      OPSMIND_LLM_API_KEY: ${OPSMIND_LLM_API_KEY:-}
+      OPSMIND_LLM_MODEL: ${OPSMIND_LLM_MODEL:-}
+      OPSMIND_LLM_TIMEOUT_SECONDS: ${OPSMIND_LLM_TIMEOUT_SECONDS:-30}
+      OPSMIND_INVESTIGATION_MAX_TOOL_CALLS: ${OPSMIND_INVESTIGATION_MAX_TOOL_CALLS:-12}
+      OPSMIND_INVESTIGATION_MAX_EXECUTION_SECONDS: ${OPSMIND_INVESTIGATION_MAX_EXECUTION_SECONDS:-120}
+      OPSMIND_INVESTIGATION_TOOL_TIMEOUT_SECONDS: ${OPSMIND_INVESTIGATION_TOOL_TIMEOUT_SECONDS:-15}
+      OPSMIND_INVESTIGATION_MAX_CONTEXT_CHARS: ${OPSMIND_INVESTIGATION_MAX_CONTEXT_CHARS:-48000}
+      OPSMIND_INVESTIGATION_CONFIDENCE_THRESHOLD: ${OPSMIND_INVESTIGATION_CONFIDENCE_THRESHOLD:-0.75}
+
+  detection-engine:
+    <<: *app
+    command: ["uvicorn", "opsmind_detection_engine.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8002:8000"]
+    depends_on:
+      redis: {condition: service_healthy}
+      prometheus: {condition: service_started}
+      loki: {condition: service_started}
+
+  remediation-engine:
+    <<: *app
+    command: ["uvicorn", "opsmind_remediation_engine.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8003:8000"]
+    environment:
+      <<: *app-environment
+      OPSMIND_LOCAL_DEMO_TOKEN: ${OPSMIND_LOCAL_DEMO_TOKEN:-}
+
+  notification-service:
+    <<: *app
+    command: ["uvicorn", "opsmind_notification_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8004:8000"]
+    environment:
+      <<: *app-environment
+      OPSMIND_SLACK_BOT_TOKEN: ${OPSMIND_SLACK_BOT_TOKEN:-}
+      OPSMIND_SLACK_SIGNING_SECRET: ${OPSMIND_SLACK_SIGNING_SECRET:-}
+      OPSMIND_SLACK_INCIDENT_CHANNEL: ${OPSMIND_SLACK_INCIDENT_CHANNEL:-}
+      OPSMIND_SLACK_USER_TOKENS: ${OPSMIND_SLACK_USER_TOKENS:-}
+      OPSMIND_SLACK_REMEDIATION_API_URL: http://remediation-engine:8000
+
+  worker:
+    <<: *app
+    command: ["uvicorn", "opsmind_worker.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8005:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  shopstack-postgres:
+    profiles: [shopstack]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shopstack
+      POSTGRES_USER: shopstack
+      POSTGRES_PASSWORD: ${SHOPSTACK_DB_PASSWORD:?Set SHOPSTACK_DB_PASSWORD in .env; see .env.example}
+    ports: ["127.0.0.1:5433:5432"]
+    volumes:
+      - shopstack_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopstack -d shopstack"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  shopstack-redis:
+    profiles: [shopstack]
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6380:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  shopstack-jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.110.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./infra/observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports: ["127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
+    depends_on: [shopstack-jaeger]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--web.enable-lifecycle"]
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    depends_on: [api]
+
+  loki:
+    image: grafana/loki:3.5.0
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    ports: ["127.0.0.1:13100:3100"]
+    volumes:
+      - ./infra/observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.20.0
+    profiles: [observability]
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./infra/observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy
+    depends_on: [loki]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env; see .env.example}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3300}:3000"]
+    depends_on: [prometheus]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    profiles: [observability]
+    privileged: true
+    devices: ["/dev/kmsg"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
+  shopstack-api-gateway:
+    <<: *shopstack-app
+    profiles: [shopstack]
+    command: ["uvicorn", "shopstack.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8080:8000"]
+    environment:
+      <<: *shopstack-env
+      SHOPSTACK_SERVICE: api-gateway
+      SHOPSTACK_FAILURE_LATENCY_MS: ${SHOPSTACK_GATEWAY_FAILURE_LATENCY_MS:-0}
+      SHOPSTACK_FAILURE_HTTP_500_RATE: ${SHOPSTACK_GATEWAY_FAILURE_HTTP_500_RATE:-0}
+      SHOPSTACK_FAILURE_HTTP_429_RATE: ${SHOPSTACK_GATEWAY_FAILURE_HTTP_429_RATE:-0}
+      SHOPSTACK_FAILURE_MEMORY_MB: ${SHOPSTACK_GATEWAY_FAILURE_MEMORY_MB:-0}
+      SHOPSTACK_FAILURE_CPU_STRESS_MS: ${SHOPSTACK_GATEWAY_FAILURE_CPU_STRESS_MS:-0}
+      SHOPSTACK_FAILURE_DEPENDENCY_TIMEOUT_MS: ${SHOPSTACK_GATEWAY_FAILURE_DEPENDENCY_TIMEOUT_MS:-0}
+      SHOPSTACK_FAILURE_DB_CONNECTIONS: ${SHOPSTACK_GATEWAY_FAILURE_DB_CONNECTIONS:-0}
+      SHOPSTACK_FAILURE_PACKET_LOSS_RATE: ${SHOPSTACK_GATEWAY_FAILURE_PACKET_LOSS_RATE:-0}
+      SHOPSTACK_FAILURE_CRASH_ON_START: ${SHOPSTACK_GATEWAY_FAILURE_CRASH_ON_START:-false}
+    depends_on:
+      shopstack-redis: {condition: service_healthy}
+      shopstack-user-service: {condition: service_healthy}
+      shopstack-order-service: {condition: service_healthy}
+
+  shopstack-user-service:
+    <<: *shopstack-app
+    profiles: [shopstack]
+    command: ["uvicorn", "shopstack.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8101:8000"]
+    environment:
+      <<: *shopstack-env
+      SHOPSTACK_SERVICE: user-service
+      SHOPSTACK_FAILURE_LATENCY_MS: ${SHOPSTACK_USER_FAILURE_LATENCY_MS:-0}
+      SHOPSTACK_FAILURE_HTTP_500_RATE: ${SHOPSTACK_USER_FAILURE_HTTP_500_RATE:-0}
+      SHOPSTACK_FAILURE_HTTP_429_RATE: ${SHOPSTACK_USER_FAILURE_HTTP_429_RATE:-0}
+      SHOPSTACK_FAILURE_MEMORY_MB: ${SHOPSTACK_USER_FAILURE_MEMORY_MB:-0}
+      SHOPSTACK_FAILURE_CPU_STRESS_MS: ${SHOPSTACK_USER_FAILURE_CPU_STRESS_MS:-0}
+      SHOPSTACK_FAILURE_DEPENDENCY_TIMEOUT_MS: ${SHOPSTACK_USER_FAILURE_DEPENDENCY_TIMEOUT_MS:-0}
+      SHOPSTACK_FAILURE_DB_CONNECTIONS: ${SHOPSTACK_USER_FAILURE_DB_CONNECTIONS:-0}
+      SHOPSTACK_FAILURE_PACKET_LOSS_RATE: ${SHOPSTACK_USER_FAILURE_PACKET_LOSS_RATE:-0}
+      SHOPSTACK_FAILURE_CRASH_ON_START: ${SHOPSTACK_USER_FAILURE_CRASH_ON_START:-false}
+    depends_on:
+      shopstack-postgres: {condition: service_healthy}
+
+  shopstack-order-service:
+    <<: *shopstack-app
+    profiles: [shopstack]
+    command: ["uvicorn", "shopstack.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8102:8000"]
+    environment:
+      <<: *shopstack-env
+      SHOPSTACK_SERVICE: order-service
+      SHOPSTACK_FAILURE_LATENCY_MS: ${SHOPSTACK_ORDER_FAILURE_LATENCY_MS:-0}
+      SHOPSTACK_FAILURE_HTTP_500_RATE: ${SHOPSTACK_ORDER_FAILURE_HTTP_500_RATE:-0}
+      SHOPSTACK_FAILURE_HTTP_429_RATE: ${SHOPSTACK_ORDER_FAILURE_HTTP_429_RATE:-0}
+      SHOPSTACK_FAILURE_MEMORY_MB: ${SHOPSTACK_ORDER_FAILURE_MEMORY_MB:-0}
+      SHOPSTACK_FAILURE_CPU_STRESS_MS: ${SHOPSTACK_ORDER_FAILURE_CPU_STRESS_MS:-0}
+      SHOPSTACK_FAILURE_DEPENDENCY_TIMEOUT_MS: ${SHOPSTACK_ORDER_FAILURE_DEPENDENCY_TIMEOUT_MS:-0}
+      SHOPSTACK_FAILURE_DB_CONNECTIONS: ${SHOPSTACK_ORDER_FAILURE_DB_CONNECTIONS:-0}
+      SHOPSTACK_FAILURE_PACKET_LOSS_RATE: ${SHOPSTACK_ORDER_FAILURE_PACKET_LOSS_RATE:-0}
+      SHOPSTACK_FAILURE_CRASH_ON_START: ${SHOPSTACK_ORDER_FAILURE_CRASH_ON_START:-false}
+    depends_on:
+      shopstack-postgres: {condition: service_healthy}
+      shopstack-user-service: {condition: service_healthy}
+      shopstack-inventory-service: {condition: service_healthy}
+      shopstack-payment-service: {condition: service_healthy}
+
+  shopstack-inventory-service:
+    <<: *shopstack-app
+    profiles: [shopstack]
+    command: ["uvicorn", "shopstack.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8103:8000"]
+    environment:
+      <<: *shopstack-env
+      SHOPSTACK_SERVICE: inventory-service
+      SHOPSTACK_FAILURE_LATENCY_MS: ${SHOPSTACK_INVENTORY_FAILURE_LATENCY_MS:-0}
+      SHOPSTACK_FAILURE_HTTP_500_RATE: ${SHOPSTACK_INVENTORY_FAILURE_HTTP_500_RATE:-0}
+      SHOPSTACK_FAILURE_HTTP_429_RATE: ${SHOPSTACK_INVENTORY_FAILURE_HTTP_429_RATE:-0}
+      SHOPSTACK_FAILURE_MEMORY_MB: ${SHOPSTACK_INVENTORY_FAILURE_MEMORY_MB:-0}
+      SHOPSTACK_FAILURE_CPU_STRESS_MS: ${SHOPSTACK_INVENTORY_FAILURE_CPU_STRESS_MS:-0}
+      SHOPSTACK_FAILURE_DEPENDENCY_TIMEOUT_MS: ${SHOPSTACK_INVENTORY_FAILURE_DEPENDENCY_TIMEOUT_MS:-0}
+      SHOPSTACK_FAILURE_DB_CONNECTIONS: ${SHOPSTACK_INVENTORY_FAILURE_DB_CONNECTIONS:-0}
+      SHOPSTACK_FAILURE_PACKET_LOSS_RATE: ${SHOPSTACK_INVENTORY_FAILURE_PACKET_LOSS_RATE:-0}
+      SHOPSTACK_FAILURE_CRASH_ON_START: ${SHOPSTACK_INVENTORY_FAILURE_CRASH_ON_START:-false}
+    depends_on:
+      shopstack-postgres: {condition: service_healthy}
+
+  shopstack-payment-service:
+    <<: *shopstack-app
+    profiles: [shopstack]
+    command: ["uvicorn", "shopstack.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8104:8000"]
+    environment:
+      <<: *shopstack-env
+      SHOPSTACK_SERVICE: payment-service
+      SHOPSTACK_FAILURE_LATENCY_MS: ${SHOPSTACK_PAYMENT_FAILURE_LATENCY_MS:-0}
+      SHOPSTACK_FAILURE_HTTP_500_RATE: ${SHOPSTACK_PAYMENT_FAILURE_HTTP_500_RATE:-0}
+      SHOPSTACK_FAILURE_HTTP_429_RATE: ${SHOPSTACK_PAYMENT_FAILURE_HTTP_429_RATE:-0}
+      SHOPSTACK_FAILURE_MEMORY_MB: ${SHOPSTACK_PAYMENT_FAILURE_MEMORY_MB:-0}
+      SHOPSTACK_FAILURE_CPU_STRESS_MS: ${SHOPSTACK_PAYMENT_FAILURE_CPU_STRESS_MS:-0}
+      SHOPSTACK_FAILURE_DEPENDENCY_TIMEOUT_MS: ${SHOPSTACK_PAYMENT_FAILURE_DEPENDENCY_TIMEOUT_MS:-0}
+      SHOPSTACK_FAILURE_DB_CONNECTIONS: ${SHOPSTACK_PAYMENT_FAILURE_DB_CONNECTIONS:-0}
+      SHOPSTACK_FAILURE_PACKET_LOSS_RATE: ${SHOPSTACK_PAYMENT_FAILURE_PACKET_LOSS_RATE:-0}
+      SHOPSTACK_FAILURE_CRASH_ON_START: ${SHOPSTACK_PAYMENT_FAILURE_CRASH_ON_START:-false}
+    depends_on:
+      shopstack-postgres: {condition: service_healthy}
+
+
+volumes:
+  postgres_data:
+  shopstack_postgres_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  alloy_data:

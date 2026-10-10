@@ -1,0 +1,12 @@
+environment = "staging"
+namespace   = "opsmind-staging"
+
+resource_quota = {
+  pods                   = "80"
+  "requests.cpu"         = "24"
+  "requests.memory"      = "48Gi"
+  "limits.cpu"            = "48"
+  "limits.memory"         = "96Gi"
+  "requests.storage"      = "100Gi"
+  persistentvolumeclaims = "10"
+}

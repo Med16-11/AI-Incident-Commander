@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opsmind"
+version = "0.1.0"
+description = "AI-powered incident response control plane for distributed applications"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "httpx>=0.27,<1.0",
+  "kubernetes>=32,<37",
+  "alembic>=1.14,<2.0",
+  "pydantic>=2.9,<3.0",
+  "pydantic-settings>=2.6,<3.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "prometheus-client>=0.21,<1.0",
+  "redis>=5.2,<7.0",
+  "opentelemetry-api>=1.28,<2.0",
+  "opentelemetry-sdk>=1.28,<2.0",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.28,<2.0",
+  "opentelemetry-instrumentation-fastapi>=0.49b0,<1.0",
+  "opentelemetry-instrumentation-httpx>=0.49b0,<1.0",
+  "opentelemetry-instrumentation-sqlalchemy>=0.49b0,<1.0",
+  "sqlalchemy>=2.0,<3.0",
+  "starlette>=0.46,<1.0",
+  "structlog>=24.4,<26.0",
+  "uvicorn[standard]>=0.32,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27,<1.0",
+  "mypy>=1.13,<2.0",
+  "pre-commit>=4.0,<5.0",
+  "pytest>=8.3,<9.0",
+  "ruff>=0.8,<1.0",
+]
+
+[project.scripts]
+opsmind = "opsmind_chaoslab.cli:main"
+
+[tool.setuptools.packages.find]
+where = [
+  "apps/api/src",
+  "apps/incident-engine/src",
+  "apps/detection-engine/src",
+  "apps/remediation-engine/src",
+  "apps/notification-service/src",
+  "apps/worker/src",
+  "apps/shopstack/src",
+  "apps/chaoslab/src",
+  "apps/demo/src",
+  "packages/models/src",
+  "packages/clients/src",
+  "packages/observability/src",
+  "packages/common/src",
+  "packages/storage/src",
+  "packages/events/src",
+]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["apps", "packages", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = [
+  "apps/api/src",
+  "apps/incident-engine/src",
+  "apps/detection-engine/src",
+  "apps/remediation-engine/src",
+  "apps/notification-service/src",
+  "apps/worker/src",
+  "apps/shopstack/src",
+  "apps/chaoslab/src",
+  "apps/demo/src",
+  "packages/models/src",
+  "packages/clients/src",
+  "packages/observability/src",
+  "packages/common/src",
+  "packages/storage/src",
+  "packages/events/src",
+]
+warn_unreachable = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["kubernetes", "kubernetes.*"]
+ignore_missing_imports = true

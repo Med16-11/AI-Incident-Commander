@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: opsmind-web-nginx}
+data:
+  default.conf.template: |
+    server {
+      listen 8080;
+      server_name _;
+      root /usr/share/nginx/html;
+      index index.html;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-Frame-Options "DENY" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+      location /api/ {
+        proxy_pass http://opsmind-api:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+      }
+      location /remediation-api/ {
+        proxy_pass http://opsmind-remediation-engine:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      location /prometheus/ {
+        proxy_pass ${OPSMIND_PROMETHEUS_PROXY_URL}/;
+        proxy_set_header Host $host;
+      }
+      location / {
+        try_files $uri $uri/ /index.html;
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata: {name: opsmind-web, labels: {app.kubernetes.io/part-of: opsmind}}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: opsmind-web}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opsmind-web}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-web}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: web, app.kubernetes.io/name: opsmind-web}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 101, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: web
+          image: ${OPSMIND_WEB_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 8080}]
+          env:
+            - {name: OPSMIND_PROMETHEUS_PROXY_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_PROMETHEUS_PROXY_URL}}}
+          volumeMounts:
+            - {name: nginx-template, mountPath: /etc/nginx/templates/default.conf.template, subPath: default.conf.template, readOnly: true}
+            - {name: nginx-conf, mountPath: /etc/nginx/conf.d}
+            - {name: nginx-cache, mountPath: /var/cache/nginx}
+            - {name: nginx-run, mountPath: /var/run}
+            - {name: tmp, mountPath: /tmp}
+          securityContext: {runAsNonRoot: true, runAsUser: 101, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /, port: http}, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /, port: http}, periodSeconds: 5}
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+      volumes:
+        - {name: nginx-template, configMap: {name: opsmind-web-nginx}}
+        - {name: nginx-conf, emptyDir: {sizeLimit: 16Mi}}
+        - {name: nginx-cache, emptyDir: {sizeLimit: 128Mi}}
+        - {name: nginx-run, emptyDir: {sizeLimit: 16Mi}}
+        - {name: tmp, emptyDir: {sizeLimit: 16Mi}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: opsmind-web}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-web}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-web}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: opsmind-web}
+  minReplicas: 2
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 80}}

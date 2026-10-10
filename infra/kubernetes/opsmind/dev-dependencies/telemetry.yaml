@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: Service
+metadata: {name: prometheus, labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability}}
+spec:
+  selector: {app.kubernetes.io/name: prometheus}
+  ports: [{name: http, port: 9090, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: prometheus}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability, app.kubernetes.io/name: prometheus}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.5.0
+          args: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=7d]
+          ports: [{name: http, containerPort: 9090}]
+          volumeMounts: [{name: config, mountPath: /etc/prometheus, readOnly: true}, {name: data, mountPath: /prometheus}]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /-/healthy, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /-/healthy, port: http}, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 5}
+          resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+      volumes:
+        - {name: config, configMap: {name: prometheus-config}}
+        - {name: data, emptyDir: {sizeLimit: 10Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: loki, labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability}}
+spec:
+  selector: {app.kubernetes.io/name: loki}
+  ports: [{name: http, port: 3100, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: loki}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: loki}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability, app.kubernetes.io/name: loki}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: loki
+          image: grafana/loki:3.5.0
+          args: [-config.file=/etc/loki/loki.yaml]
+          ports: [{name: http, containerPort: 3100}]
+          volumeMounts: [{name: config, mountPath: /etc/loki, readOnly: true}, {name: data, mountPath: /loki}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /ready, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /ready, port: http}, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /ready, port: http}, periodSeconds: 5}
+          resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+      volumes:
+        - {name: config, configMap: {name: loki-config, items: [{key: loki.yaml, path: loki.yaml}]}}
+        - {name: data, emptyDir: {sizeLimit: 10Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: otel-collector, labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability}}
+spec:
+  selector: {app.kubernetes.io/name: otel-collector}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: otlp-grpc}
+    - {name: otlp-http, port: 4318, targetPort: otlp-http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: otel-collector}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: otel-collector}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability, app.kubernetes.io/name: otel-collector}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.110.0
+          args: [--config=/etc/otelcol/otel-collector.yaml]
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: otlp-http, containerPort: 4318}
+          volumeMounts: [{name: config, mountPath: /etc/otelcol, readOnly: true}]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {tcpSocket: {port: otlp-grpc}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: otlp-grpc}, periodSeconds: 10}
+          readinessProbe: {tcpSocket: {port: otlp-grpc}, periodSeconds: 5}
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+      volumes:
+        - {name: config, configMap: {name: otel-config, items: [{key: otel-collector.yaml, path: otel-collector.yaml}]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: jaeger, labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability}}
+spec:
+  selector: {app.kubernetes.io/name: jaeger}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: otlp-grpc}
+    - {name: ui, port: 16686, targetPort: ui}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: jaeger}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: jaeger}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: observability, app.kubernetes.io/name: jaeger}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      containers:
+        - name: jaeger
+          image: jaegertracing/all-in-one:1.62.0
+          env: [{name: COLLECTOR_OTLP_ENABLED, value: "true"}]
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: ui, containerPort: 16686}
+          startupProbe: {httpGet: {path: /, port: ui}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /, port: ui}, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /, port: ui}, periodSeconds: 5}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}

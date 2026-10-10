@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: opsmind
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - opsmind-api:8000
+          - opsmind-incident-engine:8000
+          - opsmind-detection-engine:8000
+          - opsmind-remediation-engine:8000
+          - opsmind-notification-service:8000
+          - opsmind-worker:8000

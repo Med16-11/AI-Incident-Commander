@@ -1,0 +1,270 @@
+{
+  "benchmark_run_id": "6646ad29-0542-4386-a1d8-217e61658a52",
+  "started_at": "2026-10-06T13:15:57.261245+00:00",
+  "host": {
+    "platform": "macOS-15.3.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.5",
+    "database": "local PostgreSQL via Compose TCP port",
+    "event_store": "local Redis Streams via Compose TCP port",
+    "api_mode": "in-process ASGI transport; no TCP proxy or load balancer",
+    "investigation_provider": "deterministic local provider stub",
+    "remediation_executor": "deterministic no-op benchmark adapter"
+  },
+  "scenarios": [
+    {
+      "scenario": "sequential",
+      "incident_count": 10,
+      "concurrency_limit": 1,
+      "elapsed_seconds": 0.87,
+      "incidents_per_second": 11.49,
+      "anomaly_detection_latency": {
+        "count": 10,
+        "mean_ms": 0.106,
+        "p50_ms": 0.068,
+        "p95_ms": 0.098,
+        "p99_ms": 0.098,
+        "max_ms": 0.428
+      },
+      "incident_creation_latency": {
+        "count": 10,
+        "mean_ms": 12.599,
+        "p50_ms": 8.625,
+        "p95_ms": 14.895,
+        "p99_ms": 14.895,
+        "max_ms": 41.137
+      },
+      "investigation_duration": {
+        "count": 10,
+        "mean_ms": 1.99,
+        "p50_ms": 1.794,
+        "p95_ms": 2.09,
+        "p99_ms": 2.09,
+        "max_ms": 3.159
+      },
+      "investigation_tool_calls": {
+        "count": 10,
+        "mean": 1.0,
+        "p50": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1
+      },
+      "remediation_latency": {
+        "count": 10,
+        "mean_ms": 27.675,
+        "p50_ms": 23.66,
+        "p95_ms": 39.396,
+        "p99_ms": 39.396,
+        "max_ms": 45.552
+      },
+      "mttr": {
+        "count": 10,
+        "mean_ms": 86.987,
+        "p50_ms": 75.938,
+        "p95_ms": 121.997,
+        "p99_ms": 121.997,
+        "max_ms": 143.834
+      },
+      "api_request_count": 90,
+      "api_throughput_requests_per_second": 103.411,
+      "api_request_latency": {
+        "count": 90,
+        "mean_ms": 9.386,
+        "p50_ms": 8.115,
+        "p95_ms": 14.888,
+        "p99_ms": 19.713,
+        "max_ms": 41.127
+      },
+      "http_status_counts": {
+        "200": 70,
+        "201": 20
+      }
+    },
+    {
+      "scenario": "sequential",
+      "incident_count": 100,
+      "concurrency_limit": 1,
+      "elapsed_seconds": 7.708,
+      "incidents_per_second": 12.974,
+      "anomaly_detection_latency": {
+        "count": 100,
+        "mean_ms": 0.065,
+        "p50_ms": 0.064,
+        "p95_ms": 0.077,
+        "p99_ms": 0.091,
+        "max_ms": 0.142
+      },
+      "incident_creation_latency": {
+        "count": 100,
+        "mean_ms": 8.877,
+        "p50_ms": 8.419,
+        "p95_ms": 11.447,
+        "p99_ms": 14.896,
+        "max_ms": 24.768
+      },
+      "investigation_duration": {
+        "count": 100,
+        "mean_ms": 1.934,
+        "p50_ms": 1.918,
+        "p95_ms": 2.155,
+        "p99_ms": 2.265,
+        "max_ms": 3.727
+      },
+      "investigation_tool_calls": {
+        "count": 100,
+        "mean": 1.0,
+        "p50": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1
+      },
+      "remediation_latency": {
+        "count": 100,
+        "mean_ms": 24.895,
+        "p50_ms": 23.883,
+        "p95_ms": 32.257,
+        "p99_ms": 39.006,
+        "max_ms": 39.716
+      },
+      "mttr": {
+        "count": 100,
+        "mean_ms": 77.044,
+        "p50_ms": 73.766,
+        "p95_ms": 104.805,
+        "p99_ms": 118.377,
+        "max_ms": 120.329
+      },
+      "api_request_count": 900,
+      "api_throughput_requests_per_second": 116.765,
+      "api_request_latency": {
+        "count": 900,
+        "mean_ms": 8.296,
+        "p50_ms": 7.349,
+        "p95_ms": 12.805,
+        "p99_ms": 17.608,
+        "max_ms": 56.785
+      },
+      "http_status_counts": {
+        "200": 700,
+        "201": 200
+      }
+    },
+    {
+      "scenario": "concurrent",
+      "incident_count": 100,
+      "concurrency_limit": 20,
+      "elapsed_seconds": 3.792,
+      "incidents_per_second": 26.372,
+      "anomaly_detection_latency": {
+        "count": 100,
+        "mean_ms": 0.118,
+        "p50_ms": 0.046,
+        "p95_ms": 0.518,
+        "p99_ms": 1.013,
+        "max_ms": 1.604
+      },
+      "incident_creation_latency": {
+        "count": 100,
+        "mean_ms": 86.942,
+        "p50_ms": 85.878,
+        "p95_ms": 102.936,
+        "p99_ms": 145.01,
+        "max_ms": 147.828
+      },
+      "investigation_duration": {
+        "count": 100,
+        "mean_ms": 10.641,
+        "p50_ms": 8.82,
+        "p95_ms": 22.951,
+        "p99_ms": 30.604,
+        "max_ms": 43.562
+      },
+      "investigation_tool_calls": {
+        "count": 100,
+        "mean": 1.0,
+        "p50": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1
+      },
+      "remediation_latency": {
+        "count": 100,
+        "mean_ms": 238.364,
+        "p50_ms": 242.379,
+        "p95_ms": 292.421,
+        "p99_ms": 307.244,
+        "max_ms": 312.007
+      },
+      "mttr": {
+        "count": 100,
+        "mean_ms": 742.497,
+        "p50_ms": 755.285,
+        "p95_ms": 843.596,
+        "p99_ms": 852.368,
+        "max_ms": 854.442
+      },
+      "api_request_count": 900,
+      "api_throughput_requests_per_second": 237.348,
+      "api_request_latency": {
+        "count": 900,
+        "mean_ms": 81.259,
+        "p50_ms": 77.903,
+        "p95_ms": 116.902,
+        "p99_ms": 139.404,
+        "max_ms": 158.07
+      },
+      "http_status_counts": {
+        "200": 700,
+        "201": 200
+      }
+    }
+  ],
+  "event_throughput": [
+    {
+      "published": 10,
+      "persisted": 10,
+      "elapsed_seconds": 0.0046,
+      "events_per_second": 2182.77,
+      "publish_latency": {
+        "count": 10,
+        "mean_ms": 0.368,
+        "p50_ms": 0.197,
+        "p95_ms": 0.24,
+        "p99_ms": 0.24,
+        "max_ms": 1.86
+      }
+    },
+    {
+      "published": 100,
+      "persisted": 100,
+      "elapsed_seconds": 0.0344,
+      "events_per_second": 2908.12,
+      "publish_latency": {
+        "count": 100,
+        "mean_ms": 0.33,
+        "p50_ms": 0.248,
+        "p95_ms": 0.379,
+        "p99_ms": 2.049,
+        "max_ms": 3.922
+      }
+    }
+  ],
+  "detector_quality": {
+    "labeled_cases": 200,
+    "true_positive": 100,
+    "false_negative": 0,
+    "false_positive": 0,
+    "true_negative": 100,
+    "false_positive_rate": 0.0,
+    "false_negative_rate": 0.0
+  },
+  "notes": [
+    "All incidents and labels are synthetic and isolated under a unique benchmark tenant.",
+    "Synthetic tenant data and Redis benchmark streams are deleted after each run.",
+    "Append-only audit records remain as a benchmark audit trail under the temporary tenant.",
+    "False-positive and false-negative rates describe only the labeled synthetic set.",
+    "Investigation timings use one deterministic evidence tool and local provider stub.",
+    "Remediation timings use real policy, approval, and execution endpoints with a no-op executor.",
+    "MTTR spans incident creation through RESOLVED, including the stub investigation and remediation flow."
+  ]
+}

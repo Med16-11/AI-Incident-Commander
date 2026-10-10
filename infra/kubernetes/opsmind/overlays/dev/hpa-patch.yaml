@@ -1,0 +1,29 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-api}
+spec: {minReplicas: 1, maxReplicas: 2}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-web}
+spec: {minReplicas: 1, maxReplicas: 2}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-incident-engine}
+spec: {minReplicas: 1, maxReplicas: 2}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-remediation-engine}
+spec: {minReplicas: 1, maxReplicas: 2}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-notification-service}
+spec: {minReplicas: 1, maxReplicas: 2}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: opsmind-worker}
+spec: {minReplicas: 1, maxReplicas: 2}

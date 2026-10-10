@@ -1,0 +1,208 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmind-api
+  labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: api}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-api}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: api, app.kubernetes.io/name: opsmind-api}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: api
+          image: ${OPSMIND_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [uvicorn, opsmind_api.main:app, --host, 0.0.0.0, --port, "8000"]
+          ports: [{name: http, containerPort: 8000}]
+          envFrom: [{configMapRef: {name: opsmind-config}}]
+          env:
+            - {name: OPSMIND_DATABASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_DATABASE_URL}}}
+            - {name: OPSMIND_LOCAL_DEMO_TOKEN, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LOCAL_DEMO_TOKEN, optional: true}}}
+            - {name: OPSMIND_REDIS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_REDIS_URL}}}
+            - {name: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT}}}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 2}
+          resources: {requests: {cpu: 200m, memory: 256Mi}, limits: {cpu: "1", memory: 768Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmind-incident-engine
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-incident-engine}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: application, app.kubernetes.io/name: opsmind-incident-engine}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: incident-engine
+          image: ${OPSMIND_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [uvicorn, opsmind_incident_engine.main:app, --host, 0.0.0.0, --port, "8000"]
+          ports: [{name: http, containerPort: 8000}]
+          envFrom: [{configMapRef: {name: opsmind-config}}]
+          env:
+            - {name: OPSMIND_DATABASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_DATABASE_URL}}}
+            - {name: OPSMIND_REDIS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_REDIS_URL}}}
+            - {name: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT}}}
+            - {name: OPSMIND_PROMETHEUS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_PROMETHEUS_URL}}}
+            - {name: OPSMIND_LOKI_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LOKI_URL}}}
+            - {name: OPSMIND_CORRELATION_API_TOKEN, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_CORRELATION_API_TOKEN, optional: true}}}
+            - {name: OPSMIND_INVESTIGATION_API_TOKEN, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_INVESTIGATION_API_TOKEN, optional: true}}}
+            - {name: OPSMIND_LLM_API_KEY, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LLM_API_KEY, optional: true}}}
+            - {name: OPSMIND_LLM_BASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LLM_BASE_URL, optional: true}}}
+            - {name: OPSMIND_LLM_MODEL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LLM_MODEL, optional: true}}}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 2}
+          resources: {requests: {cpu: 200m, memory: 256Mi}, limits: {cpu: "1", memory: 768Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmind-detection-engine
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-detection-engine}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: application, app.kubernetes.io/name: opsmind-detection-engine}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: detection-engine
+          image: ${OPSMIND_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [uvicorn, opsmind_detection_engine.main:app, --host, 0.0.0.0, --port, "8000"]
+          ports: [{name: http, containerPort: 8000}]
+          envFrom: [{configMapRef: {name: opsmind-config}}]
+          env:
+            - {name: OPSMIND_DATABASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_DATABASE_URL}}}
+            - {name: OPSMIND_REDIS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_REDIS_URL}}}
+            - {name: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT}}}
+            - {name: OPSMIND_PROMETHEUS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_PROMETHEUS_URL}}}
+            - {name: OPSMIND_LOKI_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LOKI_URL}}}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 768Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmind-remediation-engine
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-remediation-engine}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: application, app.kubernetes.io/name: opsmind-remediation-engine}
+    spec:
+      serviceAccountName: opsmind-remediation
+      automountServiceAccountToken: true
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: remediation-engine
+          image: ${OPSMIND_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [uvicorn, opsmind_remediation_engine.main:app, --host, 0.0.0.0, --port, "8000"]
+          ports: [{name: http, containerPort: 8000}]
+          envFrom: [{configMapRef: {name: opsmind-config}}]
+          env:
+            - {name: OPSMIND_DATABASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_DATABASE_URL}}}
+            - {name: OPSMIND_LOCAL_DEMO_TOKEN, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LOCAL_DEMO_TOKEN, optional: true}}}
+            - {name: OPSMIND_REDIS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_REDIS_URL}}}
+            - {name: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT}}}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 2}
+          resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 768Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmind-notification-service
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-notification-service}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: application, app.kubernetes.io/name: opsmind-notification-service}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: notification-service
+          image: ${OPSMIND_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [uvicorn, opsmind_notification_service.main:app, --host, 0.0.0.0, --port, "8000"]
+          ports: [{name: http, containerPort: 8000}]
+          envFrom: [{configMapRef: {name: opsmind-config}}]
+          env:
+            - {name: OPSMIND_DATABASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_DATABASE_URL}}}
+            - {name: OPSMIND_REDIS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_REDIS_URL}}}
+            - {name: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT}}}
+            - {name: OPSMIND_SLACK_BOT_TOKEN, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_SLACK_BOT_TOKEN, optional: true}}}
+            - {name: OPSMIND_SLACK_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_SLACK_SIGNING_SECRET, optional: true}}}
+            - {name: OPSMIND_SLACK_USER_TOKENS, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_SLACK_USER_TOKENS, optional: true}}}
+            - {name: OPSMIND_SLACK_REMEDIATION_API_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_SLACK_REMEDIATION_API_URL, optional: true}}}
+            - {name: OPSMIND_SLACK_INCIDENT_CHANNEL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_SLACK_INCIDENT_CHANNEL, optional: true}}}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          resources: {requests: {cpu: 150m, memory: 192Mi}, limits: {cpu: "1", memory: 512Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmind-worker
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-worker}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: application, app.kubernetes.io/name: opsmind-worker}
+    spec:
+      serviceAccountName: opsmind-app
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: worker
+          image: ${OPSMIND_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [uvicorn, opsmind_worker.main:app, --host, 0.0.0.0, --port, "8000"]
+          ports: [{name: http, containerPort: 8000}]
+          envFrom: [{configMapRef: {name: opsmind-config}}]
+          env:
+            - {name: OPSMIND_DATABASE_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_DATABASE_URL}}}
+            - {name: OPSMIND_REDIS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_REDIS_URL}}}
+            - {name: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT}}}
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          resources: {requests: {cpu: 150m, memory: 192Mi}, limits: {cpu: "1", memory: 512Mi}}

@@ -1,0 +1,150 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-dns-egress}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-application-east-west}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: opsmind}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/part-of: opsmind}
+      ports: [{protocol: TCP, port: 8000}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports: [{protocol: TCP, port: 8000}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: observability}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: prometheus}
+      ports: [{protocol: TCP, port: 8000}]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/part-of: opsmind}
+      ports: [{protocol: TCP, port: 8000}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: database}
+      ports: [{protocol: TCP, port: 5432}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: redis}
+      ports: [{protocol: TCP, port: 6379}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: observability}
+      ports:
+        - {protocol: TCP, port: 9090}
+        - {protocol: TCP, port: 3100}
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-external-integrations-https}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [opsmind-incident-engine, opsmind-notification-service, opsmind-web]
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-remediation-kubernetes-api}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: opsmind-remediation-engine}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: "${OPSMIND_KUBERNETES_API_CIDR}"}}]
+      ports:
+        - protocol: TCP
+          port: ${OPSMIND_KUBERNETES_API_PORT}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-database-client-ingress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: database}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/part-of: opsmind}
+      ports: [{protocol: TCP, port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-redis-client-ingress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: redis}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/part-of: opsmind}
+      ports: [{protocol: TCP, port: 6379}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-observability-ingress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: observability}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/part-of: opsmind}
+      ports:
+        - {protocol: TCP, port: 9090}
+        - {protocol: TCP, port: 3100}
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 4318}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-web-ingress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: opsmind-web}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports: [{protocol: TCP, port: 8080}]
