@@ -28,7 +28,9 @@ def main() -> None:
     try:
         if not client.ping():
             raise RuntimeError("Redis PING did not return success")
-        event_id = client.xadd(stream, {"event_type": "CiSmokeCheck", "correlation_id": str(uuid4())})
+        event_id = client.xadd(
+            stream, {"event_type": "CiSmokeCheck", "correlation_id": str(uuid4())}
+        )
         messages = client.xrange(stream, min=event_id, max=event_id)
         if not messages or messages[0][1].get("event_type") != "CiSmokeCheck":
             raise RuntimeError("Redis Streams write/read smoke check failed")
