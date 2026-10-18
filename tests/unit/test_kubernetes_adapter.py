@@ -11,6 +11,7 @@ from kubernetes.client.exceptions import ApiException
 from opsmind_models.domain.remediation import RemediationActionType, RemediationRisk
 from opsmind_remediation_engine.executors import RemediationCommand
 from opsmind_remediation_engine.kubernetes_adapter import KubernetesRemediationAdapter
+from urllib3 import HTTPConnectionPool
 from urllib3.exceptions import ReadTimeoutError
 
 
@@ -317,7 +318,11 @@ def test_unavailable_kubernetes_api_retries_then_fails_closed() -> None:
     def unavailable(**_kwargs: object) -> client.V1Deployment:
         nonlocal attempts
         attempts += 1
-        raise ReadTimeoutError(None, "kubernetes", "simulated API timeout")
+        raise ReadTimeoutError(
+            HTTPConnectionPool("kubernetes.local"),
+            "kubernetes",
+            "simulated API timeout",
+        )
 
     apps.read_namespaced_deployment = unavailable
     delays: list[float] = []

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from opsmind_remediation_engine.executors import (
     ExecutionResult,
@@ -458,13 +459,15 @@ def test_expired_approval_is_persisted_and_never_executed(tmp_path: Path) -> Non
         engine.dispose()
 
 
-def test_remediation_timeout_is_audited_and_marked_failed(tmp_path: Path) -> None:
+def test_remediation_timeout_is_audited_and_marked_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     engine, sessions, client, _, incident_id, _, _, _, operator, executor = _setup(tmp_path)
 
-    def timeout_execute(_command: RemediationCommand) -> ExecutionResult:
+    def timeout_execute(_executor: FakeExecutor, _command: RemediationCommand) -> ExecutionResult:
         raise TimeoutError("adapter timeout")
 
-    executor.execute = timeout_execute
+    monkeypatch.setattr(FakeExecutor, "execute", timeout_execute)
     try:
         proposal = client.post(
             f"/incidents/{incident_id}/remediations",

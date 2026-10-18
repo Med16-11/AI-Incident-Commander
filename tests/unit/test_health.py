@@ -1,6 +1,6 @@
 """Health endpoint and request-correlation contract tests."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from uuid import uuid4
 
 import pytest
@@ -15,6 +15,7 @@ from opsmind_incident_engine.main import create_app as create_incident_app
 from opsmind_notification_service.main import app as notification_app
 from opsmind_remediation_engine.main import create_app as create_remediation_app
 from opsmind_worker.main import app as worker_app
+from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy import event as sqlalchemy_event
 from sqlalchemy.exc import OperationalError
@@ -32,7 +33,7 @@ _remediation_health_engine = create_engine("sqlite://", poolclass=StaticPool)
 _remediation_health_sessions = sessionmaker(bind=_remediation_health_engine, class_=Session)
 remediation_app = create_remediation_app(session_factory=_remediation_health_sessions)
 detection_app = create_detection_app(
-    Settings(event_ingestion_token="unit-test-token-with-sufficient-length")
+    Settings(event_ingestion_token=SecretStr("unit-test-token-with-sufficient-length"))
 )
 
 SERVICES: tuple[tuple[str, ASGIApp], ...] = (
@@ -145,7 +146,7 @@ def test_api_database_request_returns_sanitized_503_when_storage_is_unavailable(
     ],
 )
 def test_database_backed_service_readiness_returns_503_when_database_is_unavailable(
-    service_name: str, factory: object
+    service_name: str, factory: Callable[..., ASGIApp]
 ) -> None:
     engine = create_engine("sqlite://", poolclass=StaticPool)
 
@@ -154,8 +155,8 @@ def test_database_backed_service_readiness_returns_503_when_database_is_unavaila
         raise OperationalError("SELECT 1", {}, RuntimeError("database unavailable"))
 
     sessions = sessionmaker(bind=engine, class_=Session)
-    app = factory(session_factory=sessions)  # type: ignore[operator]
-    with TestClient(app) as client:  # type: ignore[arg-type]
+    app = factory(session_factory=sessions)
+    with TestClient(app) as client:
         response = client.get("/health/ready")
     engine.dispose()
 
