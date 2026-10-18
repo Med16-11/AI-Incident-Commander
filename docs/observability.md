@@ -32,6 +32,12 @@ All application metrics are scraped from `/metrics` every 15 seconds. Applicatio
 | `opsmind_incidents_current{state}` | Durable incident counts read from PostgreSQL at each API metrics scrape; aggregate replicas with `max by (state)` because each API replica reports the same database view. |
 | `opsmind_remediation_actions_total{action,outcome}` | Remediation API operations and outcome. |
 | `events_published_total`, `events_processed_total`, `events_failed_total`, `event_processing_latency`, `queue_depth` | Event transport metrics exposed by the event metrics component when a publisher/consumer is running. |
+| `opsmind_ingestion_requests_total` | HTTP POST requests received by the event-ingestion endpoint, including rejected requests. |
+| `opsmind_ingestion_events_published_total` | Events appended to Redis by the Go ingestion service. |
+| `opsmind_ingestion_events_duplicate_total` | Replayed event IDs returned without a second stream entry. |
+| `opsmind_ingestion_events_invalid_total` | Invalid event envelopes rejected before Redis publication. |
+| `opsmind_ingestion_publish_failures_total` | Redis publication failures returned as retryable HTTP 503 responses. |
+| `opsmind_ingestion_unauthorized_total` | Requests rejected because the bearer credential is missing or invalid. |
 
 Prometheus derives request rate with `rate(http_requests_total[5m])`; error rate is the rate of 5xx requests divided by total request rate. Latency percentiles are calculated from histogram buckets. These are estimates within configured histogram bucket resolution.
 

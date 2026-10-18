@@ -7,7 +7,7 @@ scrape_configs:
   - job_name: opsmind
     metrics_path: /metrics
     static_configs:
-      - targets: [api:8000, incident-engine:8000, detection-engine:8000, remediation-engine:8000, notification-service:8000, worker:8000]
+      - targets: [api:8000, incident-engine:8000, detection-engine:8000, remediation-engine:8000, notification-service:8000, worker:8000, event-ingestion:8000]
   - job_name: shopstack
     metrics_path: /metrics
     static_configs:

@@ -4,11 +4,11 @@ OpsMind uses Kustomize for application resources and environment overlays. This 
 
 ## Workload layout
 
-Each environment runs in its own namespace: `opsmind-dev`, `opsmind-staging`, or `opsmind-production`. The API, incident engine, detection engine, remediation engine, notification service, worker, and web console each have a ClusterIP Service and Deployment. An ingress controller or gateway is platform-owned; none of the app Services is exposed as a public LoadBalancer.
+Each environment runs in its own namespace: `opsmind-dev`, `opsmind-staging`, or `opsmind-production`. The API, incident engine, detection engine, remediation engine, notification service, worker, Go event-ingestion service, and web console each have a ClusterIP Service and Deployment. An ingress controller or gateway is platform-owned; none of the app Services is exposed as a public LoadBalancer.
 
 The remediation Deployment uses its own ServiceAccount in the OpsMind namespace. The deploy script installs a Role and RoleBinding into the separately configured monitored-workload namespace, granting deployment get/patch, deployment scale patch, ReplicaSet list, pod list, pod log get, and event list. Use a dedicated monitored-workload namespace: these permissions apply to every matching resource in that namespace. All other workloads disable service account token mounting. Workloads use non-root identities, seccomp RuntimeDefault, read-only root filesystems where supported, dropped capabilities, resource requests/limits, startup/liveness/readiness probes, and PodDisruptionBudgets.
 
-The release image is a single OpsMind Python image with per-service Uvicorn commands. A release-specific Alembic Job migrates PostgreSQL before the deploy script waits for rollout completion. Supply an immutable image reference and unique release identifier for each rollout.
+The Python workloads share one OpsMind image with per-service Uvicorn commands. Go event ingestion is a separate minimal image. A release-specific Alembic Job migrates PostgreSQL before the deploy script waits for rollout completion. Supply immutable image references and a unique release identifier for each rollout.
 
 ## Environment responsibilities
 
@@ -24,7 +24,7 @@ HPA resources use CPU and memory utilization and require a working Kubernetes Me
 
 ## Configuration and secrets
 
-Non-secret tuning lives in `base/configmap.yaml` and environment overlay patches. Database URLs, Redis URLs, metrics/logging/tracing endpoints, internal trigger tokens, LLM credentials, and Slack credentials belong in the `opsmind-runtime` Secret. No populated Secret or `.env` file is committed. Each Pod template carries the unique release ID so a configuration or credential change paired with a new release ID restarts the workloads.
+Non-secret tuning lives in `base/configmap.yaml` and environment overlay patches. Database URLs, Redis URLs, the event-ingestion bearer token, metrics/logging/tracing endpoints, internal trigger tokens, LLM credentials, and Slack credentials belong in the `opsmind-runtime` Secret. No populated Secret or `.env` file is committed. Each Pod template carries the unique release ID so a configuration or credential change paired with a new release ID restarts the workloads.
 
 For local development, copy the relevant `secrets.env.example` to the ignored `secrets.env`, set a unique database password and update its URL using URL-encoded credentials. The deploy script creates or updates the Secret from that file. For staging and production, prefer an External Secrets controller or the cluster's supported secret-manager integration to create `opsmind-runtime`; do not leave production credentials in a workstation file. Set the matching database/Redis/observability endpoint CIDRs in the deployment environment. Set `OPSMIND_TARGET_NAMESPACE` to the existing, dedicated namespace containing the workloads OpsMind may inspect or remediate, and set `OPSMIND_KUBERNETES_API_CIDR` plus `OPSMIND_KUBERNETES_API_PORT` to the cluster API endpoint. Network policies default deny ingress/egress, permit required namespace traffic and DNS, allow HTTPS from incident, notification, and web Pods (LLM, Slack, and Prometheus proxy use), and allow managed services only on their declared ports and endpoint CIDRs. The standard NetworkPolicy API cannot restrict HTTPS to hostnames; use an egress proxy or CNI FQDN policy for destination allowlisting.
 
@@ -45,17 +45,19 @@ For local development, copy the relevant `secrets.env.example` to the ignored `s
    ```
 
    Substitute the desired environment's namespace and tfvars file. Repeat per environment.
-3. Build and push the same immutable application image used by the release:
+3. Build and push immutable application, web, and Go event-ingestion images:
 
    ```sh
    docker build -f infra/docker/Dockerfile -t "$OPSMIND_IMAGE" .
    docker push "$OPSMIND_IMAGE"
    docker build -f infra/docker/web.Dockerfile -t "$OPSMIND_WEB_IMAGE" .
    docker push "$OPSMIND_WEB_IMAGE"
+   docker build -f apps/event-ingestion/Dockerfile -t "$OPSMIND_EVENT_INGESTION_IMAGE" .
+   docker push "$OPSMIND_EVENT_INGESTION_IMAGE"
    ```
 
 4. For dev, copy `infra/kubernetes/opsmind/overlays/dev/secrets.env.example` to `secrets.env`, replace every `CHANGE_ME`, and keep it out of source control. For staging/production, create the `opsmind-runtime` Secret from the environment's secret manager before deploying.
-5. Set `OPSMIND_IMAGE` and `OPSMIND_WEB_IMAGE` to immutable registry references, `OPSMIND_RELEASE_ID` to a unique lowercase release ID, `OPSMIND_TARGET_NAMESPACE` to the existing dedicated monitored-workload namespace, and `OPSMIND_KUBERNETES_API_CIDR` plus `OPSMIND_KUBERNETES_API_PORT` to the API endpoint. Staging/production also require `OPSMIND_DB_CIDR`, `OPSMIND_REDIS_CIDR`, `OPSMIND_OBSERVABILITY_CIDR`, and `OPSMIND_METRICS_CIDR`. Use the narrow endpoint/source ranges required by the cluster network.
+5. Set `OPSMIND_IMAGE`, `OPSMIND_WEB_IMAGE`, and `OPSMIND_EVENT_INGESTION_IMAGE` to immutable registry references, `OPSMIND_RELEASE_ID` to a unique lowercase release ID, `OPSMIND_TARGET_NAMESPACE` to the existing dedicated monitored-workload namespace, and `OPSMIND_KUBERNETES_API_CIDR` plus `OPSMIND_KUBERNETES_API_PORT` to the API endpoint. Staging/production also require `OPSMIND_DB_CIDR`, `OPSMIND_REDIS_CIDR`, `OPSMIND_OBSERVABILITY_CIDR`, and `OPSMIND_METRICS_CIDR`. Use the narrow endpoint/source ranges required by the cluster network.
 6. Deploy from the repository root:
 
    ```sh
@@ -64,7 +66,7 @@ For local development, copy the relevant `secrets.env.example` to the ignored `s
    scripts/deploy-k8s.sh production
    ```
 
-The script applies the namespace, materializes the runtime Secret only when an ignored secret env file is present, renders Kustomize placeholders, applies the release, waits for the migration Job, then waits for all six backend Deployments and the web Deployment. If the Secret already exists, set `KUBE_SECRET_ENV_FILE` to a secure temporary file or let the secret manager create it before running the script.
+The script applies the namespace, materializes the runtime Secret only when an ignored secret env file is present, renders Kustomize placeholders, applies the release, waits for the migration Job, then waits for all seven backend Deployments and the web Deployment. If the Secret already exists, set `KUBE_SECRET_ENV_FILE` to a secure temporary file or let the secret manager create it before running the script.
 
 To inspect a release:
 

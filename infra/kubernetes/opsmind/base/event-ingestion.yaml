@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmind-event-ingestion
+  labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: event-ingestion}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: opsmind-event-ingestion}}
+  template:
+    metadata:
+      annotations: {opsmind.io/release-id: "${OPSMIND_RELEASE_ID}"}
+      labels: {app.kubernetes.io/part-of: opsmind, app.kubernetes.io/component: application, app.kubernetes.io/name: opsmind-event-ingestion}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: event-ingestion
+          image: ${OPSMIND_EVENT_INGESTION_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 8000}]
+          env:
+            - {name: OPSMIND_REDIS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_REDIS_URL}}}
+            - {name: OPSMIND_EVENT_INGESTION_TOKEN, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_EVENT_INGESTION_TOKEN}}}
+            - {name: OPSMIND_EVENT_STREAM, value: "opsmind:events"}
+            - {name: OPSMIND_EVENT_INGESTION_DEDUPE_TTL, value: "24h"}
+          securityContext: {runAsNonRoot: true, runAsUser: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 2}
+          resources: {requests: {cpu: 100m, memory: 96Mi}, limits: {cpu: 500m, memory: 256Mi}}

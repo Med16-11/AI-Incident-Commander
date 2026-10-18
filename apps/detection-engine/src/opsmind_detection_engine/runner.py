@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Protocol
 
 import structlog
-from opsmind_events.publisher import RedisStreamPublisher
+from opsmind_models.events import EventEnvelope
+from pydantic import BaseModel
 
 from opsmind_detection_engine.detection import (
     AnomalyEvent,
@@ -25,6 +26,12 @@ class DeduplicationStore(Protocol):
     def delete(self, name: str) -> int: ...
 
 
+class EventPublisher(Protocol):
+    """Typed event publication port, independent of the transport adapter."""
+
+    def publish[PayloadT: BaseModel](self, event: EventEnvelope[PayloadT]) -> str: ...
+
+
 class DetectionRunner:
     """Poll signal sources, emit typed anomalies, and publish one incident per group."""
 
@@ -34,7 +41,7 @@ class DetectionRunner:
         loki: LokiSource,
         detector: DeterministicDetector,
         correlator: IncidentCorrelator,
-        publisher: RedisStreamPublisher,
+        publisher: EventPublisher,
         deduplication_store: DeduplicationStore,
     ) -> None:
         self.prometheus = prometheus

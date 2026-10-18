@@ -1,9 +1,11 @@
 """Tests for shared event-envelope invariants."""
 
+import json
+from pathlib import Path
 from uuid import UUID
 
 import pytest
-from opsmind_models.events import EventEnvelope
+from opsmind_models.events import EventEnvelope, EventPayload
 from pydantic import BaseModel, ValidationError
 
 
@@ -36,3 +38,16 @@ def test_event_envelope_retains_aggregate_metadata() -> None:
     assert event.aggregate_type == "incident"
     assert event.aggregate_id == aggregate_id
     assert event.aggregate_version == 4
+
+
+def test_shared_go_ingestion_fixture_matches_python_event_contract() -> None:
+    repository_root = Path(__file__).parents[2]
+    fixture_path = repository_root / "packages/models/contracts/event-envelope-v1.fixture.json"
+    schema_path = repository_root / "packages/models/contracts/event-envelope-v1.schema.json"
+
+    envelope = EventEnvelope[EventPayload].model_validate_json(fixture_path.read_text())
+    schema = json.loads(schema_path.read_text())
+
+    assert envelope.event_type == "MetricAnomalyDetected"
+    assert envelope.correlation_id == "sample-run-01"
+    assert schema["title"] == "OpsMind Event Envelope v1"

@@ -17,6 +17,7 @@ The core safety invariant is enforced server-side: an AI investigation has only 
 | Browser hardening | Static UI responses lacked baseline content and framing protections. | Add CSP, `nosniff`, frame denial, referrer policy, and a restrictive permissions policy at Nginx. |
 | ShopStack pod isolation | ShopStack pods relied on image defaults and mounted service account credentials unnecessarily. | Require non-root UID, RuntimeDefault seccomp, no privilege escalation, read-only root filesystem, dropped Linux capabilities, and disabled service account token automount. |
 | Secret configuration | Internal correlation and investigation bearer configuration was stored as plain string settings. | Use Pydantic `SecretStr`; endpoint comparisons explicitly unwrap only for constant-time comparison. |
+| Event ingestion | External producers had no bounded Go HTTP entry point into the shared Redis event stream. | Add a bearer-authenticated Go service with constant-time token checks, a 1 MiB request limit, envelope validation, request correlation IDs, and atomic Redis event-ID deduplication. |
 | Error logging | An unexpected correlation failure logged an exception traceback that could include provider or database details. | Log only a sanitized error type and status; no exception text or traceback is emitted there. |
 
 ## Verified controls
@@ -28,6 +29,7 @@ The core safety invariant is enforced server-side: an AI investigation has only 
 - Remediation routes validate the authenticated actor and permissions server-side. AI-originated proposals do not satisfy the human approval requirement; the AI cannot approve or execute its own action.
 - Approval is bound to an action, target, risk, approver, expiry, and audit record. Duplicate, expired, or unauthorized decisions are rejected by the remediation service.
 - Slack identity is mapped to an existing OpsMind credential only after a valid Slack signature and timestamp check. Slack's supplied user identity is never treated as authorization by itself.
+- The Go event-ingestion endpoint requires a high-entropy bearer token (minimum 24 characters), accepts only JSON up to 1 MiB, and does not log credentials or payload bodies. Its Kubernetes Pod has no service-account token and connects only to Redis and the namespace-local service network.
 
 ### AI and prompt injection
 

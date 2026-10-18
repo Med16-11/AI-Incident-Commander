@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     log_json: bool = True
     database_url: str = "postgresql+psycopg://opsmind@localhost:5432/opsmind"
     redis_url: str = "redis://localhost:6379/0"
+    event_ingestion_url: str = "http://event-ingestion:8000"
+    event_ingestion_token: SecretStr | None = None
     otel_exporter_otlp_endpoint: str | None = None
     otel_exporter_otlp_insecure: bool = True
     prometheus_url: str = "http://prometheus:9090"

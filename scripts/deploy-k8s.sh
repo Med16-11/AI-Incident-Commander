@@ -9,6 +9,7 @@ esac
 
 : "${OPSMIND_IMAGE:?Set OPSMIND_IMAGE to the immutable image reference for this release}"
 : "${OPSMIND_WEB_IMAGE:?Set OPSMIND_WEB_IMAGE to the immutable web image reference for this release}"
+: "${OPSMIND_EVENT_INGESTION_IMAGE:?Set OPSMIND_EVENT_INGESTION_IMAGE to the immutable Go event-ingestion image reference for this release}"
 : "${OPSMIND_TARGET_NAMESPACE:?Set OPSMIND_TARGET_NAMESPACE to the namespace containing monitored workloads}"
 : "${OPSMIND_KUBERNETES_API_CIDR:?Set OPSMIND_KUBERNETES_API_CIDR to the cluster API endpoint CIDR}"
 : "${OPSMIND_KUBERNETES_API_PORT:?Set OPSMIND_KUBERNETES_API_PORT to the cluster API endpoint port}"
@@ -54,7 +55,7 @@ fi
 
 export OPSMIND_NAMESPACE="$namespace"
 kubectl kustomize "$overlay" \
-  | envsubst '${OPSMIND_IMAGE} ${OPSMIND_WEB_IMAGE} ${OPSMIND_RELEASE_ID} ${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE} ${OPSMIND_KUBERNETES_API_CIDR} ${OPSMIND_KUBERNETES_API_PORT} ${OPSMIND_DB_CIDR} ${OPSMIND_REDIS_CIDR} ${OPSMIND_OBSERVABILITY_CIDR} ${OPSMIND_METRICS_CIDR}' \
+  | envsubst '${OPSMIND_IMAGE} ${OPSMIND_WEB_IMAGE} ${OPSMIND_EVENT_INGESTION_IMAGE} ${OPSMIND_RELEASE_ID} ${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE} ${OPSMIND_KUBERNETES_API_CIDR} ${OPSMIND_KUBERNETES_API_PORT} ${OPSMIND_DB_CIDR} ${OPSMIND_REDIS_CIDR} ${OPSMIND_OBSERVABILITY_CIDR} ${OPSMIND_METRICS_CIDR}' \
   | kubectl apply -f -
 
 envsubst '${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE}' \
@@ -69,6 +70,7 @@ kubectl wait --for=condition=complete \
 for deployment in \
   opsmind-api \
   opsmind-incident-engine \
+  opsmind-event-ingestion \
   opsmind-detection-engine \
   opsmind-remediation-engine \
   opsmind-notification-service \

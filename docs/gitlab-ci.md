@@ -5,12 +5,12 @@ The root `.gitlab-ci.yml` runs the OpsMind release pipeline in eight ordered sta
 | Stage | Jobs and gates |
 |---|---|
 | `lint` | Ruff check/format and strict mypy for Python; TypeScript check and optimized Vite build for the web app. |
-| `test` | Python unit suite and native Node frontend unit tests. JUnit results are uploaded for Python. |
+| `test` | Python unit suite, native Node frontend unit tests, and Go event-ingestion tests with race detector and vet. JUnit results are uploaded for Python. |
 | `security` | Trivy dependency/secret scan, Terraform format/init/validate, and Kustomize render plus strict Kubernetes schema validation for all overlays. |
-| `build` | Build and push the Python service image and web image using rootless BuildKit. |
-| `scan` | Trivy scans both pushed images; HIGH and CRITICAL findings fail the job. |
+| `build` | Build and push the Python service, web, and Go event-ingestion images using rootless BuildKit. |
+| `scan` | Trivy scans all three pushed images; HIGH and CRITICAL findings fail the job. |
 | `integration-test` | API integration tests, Alembic migration against disposable PostgreSQL, and a real PostgreSQL schema/Redis Streams smoke check. |
-| `package` | CycloneDX SBOM artifacts for both images and keyless Cosign signatures for default-branch release images. |
+| `package` | CycloneDX SBOM artifacts for all images and keyless Cosign signatures for default-branch release images. |
 | `deploy` | Automatically deploys default-branch releases to staging. Production is a blocking manual job. |
 
 GitLab stage ordering blocks every deployment if a preceding lint, test, dependency, infrastructure validation, image scan, integration, SBOM, or signing job fails. Production is only present on the default branch and uses `allow_failure: false`; protect the GitLab `production` environment and restrict its allowed deployers/approvers to make the manual action a meaningful approval gate. Staging deploys automatically from the default branch once every preceding stage succeeds. Merge requests build and scan images but do not deploy or sign them.
@@ -23,7 +23,7 @@ Trivy checks lockfiles and source for HIGH/CRITICAL dependency vulnerabilities a
 
 ## Runner and project configuration
 
-Use protected Linux/amd64 runners with network access to the GitLab container registry, PyPI/npm registries, GitHub release downloads for pinned validation tools, the Kubernetes schema registry, and Sigstore endpoints. Rootless BuildKit is used with its process sandbox enabled; configure the runner kernel/seccomp and mount namespace support required by rootless BuildKit. Do not enable privileged Docker-in-Docker or disable BuildKit's process sandbox for this pipeline.
+Use protected Linux/amd64 runners with network access to the GitLab container registry, PyPI/npm/Go module registries, GitHub release downloads for pinned validation tools, the Kubernetes schema registry, and Sigstore endpoints. Rootless BuildKit is used with its process sandbox enabled; configure the runner kernel/seccomp and mount namespace support required by rootless BuildKit. Do not enable privileged Docker-in-Docker or disable BuildKit's process sandbox for this pipeline.
 
 Configure the following GitLab CI/CD variables. Mark credentials as **masked and protected**, use **file** type for kubeconfigs, and scope deployment values to their matching environment. Prefer syncing credentials from a secret manager. Never define populated credentials in `.gitlab-ci.yml`.
 
@@ -41,7 +41,7 @@ Create the `staging` and `production` namespaces, target namespaces, quotas/Limi
 
 ## Rollout and rollback
 
-The staging job waits for the release migration Job and all seven Deployments to become available. After staging verification, an authorized user starts the blocking `deploy-production` manual job. The job deploys the same signed image digests tested in staging. To roll back, redeploy a previously approved pipeline's digest artifacts through the protected production environment; do not retag a mutable image. Database migrations must remain backward compatible across the rollback window.
+The staging job waits for the release migration Job, all seven backend Deployments, and the web Deployment to become available. After staging verification, an authorized user starts the blocking `deploy-production` manual job. The job deploys the same signed image digests tested in staging. To roll back, redeploy a previously approved pipeline's digest artifacts through the protected production environment; do not retag a mutable image. Database migrations must remain backward compatible across the rollback window.
 
 ## Current test boundary
 

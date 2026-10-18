@@ -34,6 +34,7 @@ flowchart LR
 
   subgraph OpsMind[OpsMind control plane]
     Detect[Detection Engine<br/>deterministic rules]
+    Ingest[Go Event Ingestion<br/>authenticated HTTP + dedupe]
     Stream[(Redis Streams)]
     Incident[Incident Engine<br/>correlation + investigation]
     API[FastAPI<br/>incident + topology APIs]
@@ -52,7 +53,8 @@ flowchart LR
   Shop -->|OTLP traces| OTel --> Jaeger
   Prom --> Detect
   Loki --> Detect
-  Detect --> Stream --> Incident
+  Detect --> Ingest --> Stream --> Incident
+  Producer[External event producer] --> Ingest
   Incident -->|persist evidence and analysis| DB
   API <--> DB
   Incident -->|fixed read-only tools| Prom
@@ -67,7 +69,7 @@ flowchart LR
   Web --> Remed
 ```
 
-The repository uses separate Python processes for the API, incident engine, detection engine, remediation engine, notification service, and worker, sharing typed packages and PostgreSQL/Redis. Redis Streams provide event delivery; the worker consumes correlated detection events with a transactional PostgreSQL inbox and persists incident, audit, and timeline records. PostgreSQL also stores evidence, investigation state, and remediation records. ShopStack is a separate demo workload. Local traces are visualized in Jaeger; the investigator currently reads metrics/logs and persisted evidence through its tools.
+The repository uses separate Python processes for the API, incident engine, detection engine, remediation engine, notification service, and worker, plus a Go HTTP event-ingestion service. Detection events pass through the Go service, which validates the shared JSON envelope contract and atomically deduplicates events in Redis Streams; the worker consumes correlated detection events with a transactional PostgreSQL inbox and persists incident, audit, and timeline records. PostgreSQL also stores evidence, investigation state, and remediation records. ShopStack is a separate demo workload. Local traces are visualized in Jaeger; the investigator currently reads metrics/logs and persisted evidence through its tools. See [Go event ingestion](docs/event-ingestion.md).
 
 ## Incident lifecycle
 
@@ -134,7 +136,7 @@ See [remediation lifecycle and Kubernetes RBAC](docs/remediation-engine.md).
 
 | Area | Current implementation |
 |---|---|
-| Services and APIs | Python 3.12+, FastAPI, Pydantic, SQLAlchemy, Alembic |
+| Services and APIs | Go event ingestion; Python 3.12+, FastAPI, Pydantic, SQLAlchemy, Alembic |
 | Persistence and events | PostgreSQL; Redis Streams with consumer groups, retries, idempotency, and dead-letter handling |
 | Web console | React, TypeScript, Vite, Nginx reverse proxy |
 | Detection and evidence | Prometheus, Loki, deterministic detectors, incident correlation and service-topology graph |
@@ -212,7 +214,7 @@ The current auth interfaces are not a complete identity-provider integration, an
 
 ## Local setup
 
-Requirements: Docker Engine or Docker Desktop with Compose v2, Python 3.12+, `uv`, Node.js/npm for frontend work, and Make.
+Requirements: Docker Engine or Docker Desktop with Compose v2, Python 3.12+, `uv`, Go 1.24+ for Go development/tests, Node.js/npm for frontend work, and Make.
 
 ```bash
 cp .env.example .env
@@ -236,6 +238,7 @@ filter to **All**.
 | Grafana | [http://localhost:3300](http://localhost:3300) |
 | Prometheus | [http://localhost:9090](http://localhost:9090) |
 | Jaeger | [http://localhost:16686](http://localhost:16686) |
+| Go event ingestion | [http://localhost:8006/health/ready](http://localhost:8006/health/ready) |
 
 Grafana credentials are `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` from `.env`. To exercise ShopStack, send sample traffic with `uv run python scripts/shopstack_traffic.py --requests 100 --concurrency 8`. For the full scenario use `make demo`; its resolved incident should then appear in the console under the demo tenant. Stop containers with `make down`; adding `-v` deletes local database data.
 

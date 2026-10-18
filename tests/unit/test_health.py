@@ -8,8 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from opsmind_api.auth import Principal
 from opsmind_api.main import create_app
+from opsmind_common.config import Settings
 from opsmind_common.correlation import CorrelationIdMiddleware
-from opsmind_detection_engine.main import app as detection_app
+from opsmind_detection_engine.main import create_app as create_detection_app
 from opsmind_incident_engine.main import create_app as create_incident_app
 from opsmind_notification_service.main import app as notification_app
 from opsmind_remediation_engine.main import create_app as create_remediation_app
@@ -30,6 +31,9 @@ incident_app = create_incident_app(session_factory=_incident_health_sessions)
 _remediation_health_engine = create_engine("sqlite://", poolclass=StaticPool)
 _remediation_health_sessions = sessionmaker(bind=_remediation_health_engine, class_=Session)
 remediation_app = create_remediation_app(session_factory=_remediation_health_sessions)
+detection_app = create_detection_app(
+    Settings(event_ingestion_token="unit-test-token-with-sufficient-length")
+)
 
 SERVICES: tuple[tuple[str, ASGIApp], ...] = (
     ("api", api_app),

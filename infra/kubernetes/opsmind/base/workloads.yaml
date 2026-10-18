@@ -99,6 +99,8 @@ spec:
             - {name: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_OTEL_EXPORTER_OTLP_ENDPOINT}}}
             - {name: OPSMIND_PROMETHEUS_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_PROMETHEUS_URL}}}
             - {name: OPSMIND_LOKI_URL, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_LOKI_URL}}}
+            - {name: OPSMIND_EVENT_INGESTION_URL, value: "http://opsmind-event-ingestion:8000"}
+            - {name: OPSMIND_EVENT_INGESTION_TOKEN, valueFrom: {secretKeyRef: {name: opsmind-runtime, key: OPSMIND_EVENT_INGESTION_TOKEN}}}
           securityContext: {runAsNonRoot: true, runAsUser: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, timeoutSeconds: 2}

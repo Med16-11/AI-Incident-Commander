@@ -73,7 +73,7 @@ def test_repeat_poll_publishes_one_anomaly_and_one_incident() -> None:
         _Loki(),  # type: ignore[arg-type]
         DeterministicDetector(settings),
         IncidentCorrelator(settings),
-        publisher,  # type: ignore[arg-type]
+        publisher,
         _Store(),
     )
 
@@ -94,7 +94,7 @@ def test_prometheus_timeout_still_processes_loki_signals() -> None:
         _Loki([LogObservation(service="payment", message="charge failed")]),  # type: ignore[arg-type]
         DeterministicDetector(settings),
         IncidentCorrelator(settings),
-        publisher,  # type: ignore[arg-type]
+        publisher,
         _Store(),
     )
 
@@ -124,11 +124,11 @@ def test_redis_publish_failure_releases_dedup_key_for_next_poll() -> None:
     )
     publisher = FailOncePublisher()
     runner = DetectionRunner(
-        _Source([observation]),
+        _Source([observation]),  # type: ignore[arg-type]
         _Loki(),  # type: ignore[arg-type]
         DeterministicDetector(settings),
         IncidentCorrelator(settings),
-        publisher,  # type: ignore[arg-type]
+        publisher,
         _Store(),
     )
 

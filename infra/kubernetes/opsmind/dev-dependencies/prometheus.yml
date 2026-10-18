@@ -11,3 +11,4 @@ scrape_configs:
           - opsmind-remediation-engine:8000
           - opsmind-notification-service:8000
           - opsmind-worker:8000
+          - opsmind-event-ingestion:8000

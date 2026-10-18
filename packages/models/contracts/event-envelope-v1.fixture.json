@@ -1,0 +1,14 @@
+{
+  "event_id": "5f7622a1-5d2f-4b6f-b981-64ea003d195a",
+  "event_type": "MetricAnomalyDetected",
+  "timestamp": "2026-10-16T10:30:00Z",
+  "correlation_id": "sample-run-01",
+  "causation_id": null,
+  "source": "contract-fixture",
+  "schema_version": 1,
+  "tenant_id": null,
+  "aggregate_type": "service",
+  "aggregate_id": null,
+  "aggregate_version": null,
+  "payload": {"service": "payment-service", "score": 91}
+}

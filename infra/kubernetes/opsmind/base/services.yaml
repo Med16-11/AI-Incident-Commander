@@ -45,3 +45,11 @@ spec:
   type: ClusterIP
   selector: {app.kubernetes.io/name: opsmind-worker}
   ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: opsmind-event-ingestion, labels: {app.kubernetes.io/part-of: opsmind}}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: opsmind-event-ingestion}
+  ports: [{name: http, port: 8000, targetPort: http}]

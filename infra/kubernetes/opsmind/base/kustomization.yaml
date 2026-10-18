@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - configmap.yaml
   - workloads.yaml
+  - event-ingestion.yaml
   - web.yaml
   - migrations-job.yaml
   - services.yaml

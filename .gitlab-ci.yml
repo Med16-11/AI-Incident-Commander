@@ -79,6 +79,20 @@ frontend-tests:
     - cd apps/web
     - npm test
 
+go-event-ingestion-tests:
+  image: golang:1.24
+  stage: test
+  services:
+    - name: redis:7.4-alpine
+      alias: redis
+  variables:
+    OPSMIND_REDIS_URL: "redis://redis:6379/0"
+  script:
+    - cd apps/event-ingestion
+    - test -z "$(gofmt -l *.go)"
+    - go vet ./...
+    - go test -race ./...
+
 dependency-scan:
   image:
     name: aquasec/trivy:0.59.1
@@ -122,12 +136,13 @@ kubernetes-manifest-validation:
   script:
     - export OPSMIND_IMAGE="registry.invalid/opsmind:${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}"
     - export OPSMIND_WEB_IMAGE="registry.invalid/opsmind-web:${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}"
+    - export OPSMIND_EVENT_INGESTION_IMAGE="registry.invalid/opsmind-event-ingestion:${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}"
     - export OPSMIND_RELEASE_ID="${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}"
     - export OPSMIND_NAMESPACE=opsmind-validation OPSMIND_TARGET_NAMESPACE=shopstack-validation
     - export OPSMIND_KUBERNETES_API_CIDR=192.0.2.10/32 OPSMIND_KUBERNETES_API_PORT=6443
     - export OPSMIND_DB_CIDR=192.0.2.20/32 OPSMIND_REDIS_CIDR=192.0.2.21/32
     - export OPSMIND_OBSERVABILITY_CIDR=192.0.2.0/24 OPSMIND_METRICS_CIDR=192.0.2.30/32
-    - for environment in dev staging production; do kubectl kustomize "infra/kubernetes/opsmind/overlays/$environment" | envsubst '${OPSMIND_IMAGE} ${OPSMIND_WEB_IMAGE} ${OPSMIND_RELEASE_ID} ${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE} ${OPSMIND_KUBERNETES_API_CIDR} ${OPSMIND_KUBERNETES_API_PORT} ${OPSMIND_DB_CIDR} ${OPSMIND_REDIS_CIDR} ${OPSMIND_OBSERVABILITY_CIDR} ${OPSMIND_METRICS_CIDR}' | kubeconform -strict -summary -ignore-missing-schemas; done
+    - for environment in dev staging production; do kubectl kustomize "infra/kubernetes/opsmind/overlays/$environment" | envsubst '${OPSMIND_IMAGE} ${OPSMIND_WEB_IMAGE} ${OPSMIND_EVENT_INGESTION_IMAGE} ${OPSMIND_RELEASE_ID} ${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE} ${OPSMIND_KUBERNETES_API_CIDR} ${OPSMIND_KUBERNETES_API_PORT} ${OPSMIND_DB_CIDR} ${OPSMIND_REDIS_CIDR} ${OPSMIND_OBSERVABILITY_CIDR} ${OPSMIND_METRICS_CIDR}' | kubeconform -strict -summary -ignore-missing-schemas; done
     - envsubst '${OPSMIND_NAMESPACE} ${OPSMIND_TARGET_NAMESPACE}' < infra/kubernetes/opsmind/target-rbac.yaml | kubeconform -strict -summary -ignore-missing-schemas
     - kubectl kustomize infra/kubernetes/opsmind/dev-dependencies | kubeconform -strict -summary -ignore-missing-schemas
 
@@ -144,13 +159,16 @@ build-images:
     - export OPSMIND_IMAGE_TAG="${CI_COMMIT_SHA}-${CI_PIPELINE_ID}"
     - export OPSMIND_IMAGE_REPOSITORY="${CI_REGISTRY_IMAGE}/opsmind"
     - export OPSMIND_WEB_IMAGE_REPOSITORY="${CI_REGISTRY_IMAGE}/opsmind-web"
+    - export OPSMIND_EVENT_INGESTION_IMAGE_REPOSITORY="${CI_REGISTRY_IMAGE}/opsmind-event-ingestion"
   script:
     - buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=. --local dockerfile=. --opt filename=infra/docker/Dockerfile --output "type=image,name=${OPSMIND_IMAGE_REPOSITORY}:${OPSMIND_IMAGE_TAG},push=true" --metadata-file opsmind-metadata.json
     - buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=. --local dockerfile=. --opt filename=infra/docker/web.Dockerfile --output "type=image,name=${OPSMIND_WEB_IMAGE_REPOSITORY}:${OPSMIND_IMAGE_TAG},push=true" --metadata-file opsmind-web-metadata.json
+    - buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=. --local dockerfile=. --opt filename=apps/event-ingestion/Dockerfile --output "type=image,name=${OPSMIND_EVENT_INGESTION_IMAGE_REPOSITORY}:${OPSMIND_IMAGE_TAG},push=true" --metadata-file opsmind-event-ingestion-metadata.json
     - export OPSMIND_IMAGE_DIGEST="$(awk -F '"' '/containerimage.digest/ {print $4; exit}' opsmind-metadata.json)"
     - export OPSMIND_WEB_IMAGE_DIGEST="$(awk -F '"' '/containerimage.digest/ {print $4; exit}' opsmind-web-metadata.json)"
-    - test -n "$OPSMIND_IMAGE_DIGEST" && test -n "$OPSMIND_WEB_IMAGE_DIGEST"
-    - printf 'OPSMIND_IMAGE=%s@%s\nOPSMIND_WEB_IMAGE=%s@%s\nOPSMIND_IMAGE_TAG=%s\nOPSMIND_RELEASE_ID=%s\nOPSMIND_IMAGE_DIGEST=%s\nOPSMIND_WEB_IMAGE_DIGEST=%s\n' "$OPSMIND_IMAGE_REPOSITORY" "$OPSMIND_IMAGE_DIGEST" "$OPSMIND_WEB_IMAGE_REPOSITORY" "$OPSMIND_WEB_IMAGE_DIGEST" "$OPSMIND_IMAGE_TAG" "${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}" "$OPSMIND_IMAGE_DIGEST" "$OPSMIND_WEB_IMAGE_DIGEST" > build.env
+    - export OPSMIND_EVENT_INGESTION_IMAGE_DIGEST="$(awk -F '"' '/containerimage.digest/ {print $4; exit}' opsmind-event-ingestion-metadata.json)"
+    - test -n "$OPSMIND_IMAGE_DIGEST" && test -n "$OPSMIND_WEB_IMAGE_DIGEST" && test -n "$OPSMIND_EVENT_INGESTION_IMAGE_DIGEST"
+    - printf 'OPSMIND_IMAGE=%s@%s\nOPSMIND_WEB_IMAGE=%s@%s\nOPSMIND_EVENT_INGESTION_IMAGE=%s@%s\nOPSMIND_IMAGE_TAG=%s\nOPSMIND_RELEASE_ID=%s\nOPSMIND_IMAGE_DIGEST=%s\nOPSMIND_WEB_IMAGE_DIGEST=%s\nOPSMIND_EVENT_INGESTION_IMAGE_DIGEST=%s\n' "$OPSMIND_IMAGE_REPOSITORY" "$OPSMIND_IMAGE_DIGEST" "$OPSMIND_WEB_IMAGE_REPOSITORY" "$OPSMIND_WEB_IMAGE_DIGEST" "$OPSMIND_EVENT_INGESTION_IMAGE_REPOSITORY" "$OPSMIND_EVENT_INGESTION_IMAGE_DIGEST" "$OPSMIND_IMAGE_TAG" "${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_ID}" "$OPSMIND_IMAGE_DIGEST" "$OPSMIND_WEB_IMAGE_DIGEST" "$OPSMIND_EVENT_INGESTION_IMAGE_DIGEST" > build.env
   artifacts:
     reports:
       dotenv: build.env
@@ -172,11 +190,13 @@ image-scan:
       api_status=$?
       trivy image --exit-code 1 --severity HIGH,CRITICAL --format json --output opsmind-web-image-scan.json "$OPSMIND_WEB_IMAGE"
       web_status=$?
+      trivy image --exit-code 1 --severity HIGH,CRITICAL --format json --output opsmind-event-ingestion-image-scan.json "$OPSMIND_EVENT_INGESTION_IMAGE"
+      ingestion_status=$?
       set -e
-      test "$api_status" -eq 0 && test "$web_status" -eq 0
+      test "$api_status" -eq 0 && test "$web_status" -eq 0 && test "$ingestion_status" -eq 0
   artifacts:
     when: always
-    paths: [opsmind-image-scan.json, opsmind-web-image-scan.json]
+    paths: [opsmind-image-scan.json, opsmind-web-image-scan.json, opsmind-event-ingestion-image-scan.json]
     expire_in: 30 days
 
 integration-tests:
@@ -215,8 +235,9 @@ sbom:
   script:
     - trivy image --format cyclonedx --output opsmind-api.sbom.cdx.json "$OPSMIND_IMAGE"
     - trivy image --format cyclonedx --output opsmind-web.sbom.cdx.json "$OPSMIND_WEB_IMAGE"
+    - trivy image --format cyclonedx --output opsmind-event-ingestion.sbom.cdx.json "$OPSMIND_EVENT_INGESTION_IMAGE"
   artifacts:
-    paths: [opsmind-api.sbom.cdx.json, opsmind-web.sbom.cdx.json]
+    paths: [opsmind-api.sbom.cdx.json, opsmind-web.sbom.cdx.json, opsmind-event-ingestion.sbom.cdx.json]
     expire_in: 1 year
 
 sign-images:
@@ -238,6 +259,7 @@ sign-images:
   script:
     - cosign sign --yes --identity-token "$SIGSTORE_ID_TOKEN" "$OPSMIND_IMAGE"
     - cosign sign --yes --identity-token "$SIGSTORE_ID_TOKEN" "$OPSMIND_WEB_IMAGE"
+    - cosign sign --yes --identity-token "$SIGSTORE_ID_TOKEN" "$OPSMIND_EVENT_INGESTION_IMAGE"
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 

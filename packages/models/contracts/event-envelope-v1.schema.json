@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opsmind.dev/schemas/event-envelope-v1.schema.json",
+  "title": "OpsMind Event Envelope v1",
+  "type": "object",
+  "required": ["event_id", "event_type", "timestamp", "correlation_id", "source", "schema_version", "payload"],
+  "properties": {
+    "event_id": {"type": "string", "format": "uuid"},
+    "event_type": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "correlation_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"},
+    "causation_id": {"type": ["string", "null"], "format": "uuid"},
+    "source": {"type": "string", "minLength": 1, "maxLength": 160},
+    "schema_version": {"type": "integer", "minimum": 1},
+    "tenant_id": {"type": ["string", "null"], "format": "uuid"},
+    "aggregate_type": {"type": ["string", "null"], "maxLength": 160},
+    "aggregate_id": {"type": ["string", "null"], "format": "uuid"},
+    "aggregate_version": {"type": ["integer", "null"], "minimum": 1},
+    "payload": {"type": "object", "additionalProperties": true}
+  },
+  "additionalProperties": true
+}

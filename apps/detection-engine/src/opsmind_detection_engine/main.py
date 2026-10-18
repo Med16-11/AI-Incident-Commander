@@ -1,4 +1,4 @@
-"""Polling detection service that emits typed Redis Stream events."""
+"""Polling detection service that emits typed events through Go ingestion."""
 
 from __future__ import annotations
 
@@ -16,11 +16,10 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opsmind_clients import EventIngestionPublisher
 from opsmind_common.config import Settings
 from opsmind_common.correlation import CorrelationIdMiddleware
 from opsmind_common.logging import configure_logging
-from opsmind_events.publisher import RedisStreamPublisher
-from opsmind_events.redis_client import RedisStreamsClient
 from opsmind_observability.metrics import ServiceMetrics
 from prometheus_client import Counter
 from redis import Redis
@@ -61,6 +60,11 @@ def create_app(settings: Settings | None = None) -> ASGIApp:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if (
+            configuration.event_ingestion_token is None
+            or not configuration.event_ingestion_token.get_secret_value()
+        ):
+            raise RuntimeError("OPSMIND_EVENT_INGESTION_TOKEN is required by the detection engine")
         client = httpx.Client(timeout=5.0)
         redis_client = Redis.from_url(configuration.redis_url, decode_responses=True)
         detector_settings = DetectorSettings(
@@ -95,7 +99,11 @@ def create_app(settings: Settings | None = None) -> ASGIApp:
             LokiSource(client, configuration.loki_url),
             DeterministicDetector(detector_settings),
             IncidentCorrelator(detector_settings),
-            RedisStreamPublisher(cast(RedisStreamsClient, redis_client), "opsmind:events"),
+            EventIngestionPublisher(
+                client,
+                configuration.event_ingestion_url,
+                configuration.event_ingestion_token.get_secret_value(),
+            ),
             cast("DeduplicationStore", redis_client),
         )
         stopping = asyncio.Event()
