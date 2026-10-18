@@ -1,6 +1,8 @@
 """Health endpoint and request-correlation contract tests."""
 
 from collections.abc import Callable, Iterator
+from typing import cast
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -14,8 +16,9 @@ from opsmind_detection_engine.main import create_app as create_detection_app
 from opsmind_incident_engine.main import create_app as create_incident_app
 from opsmind_notification_service.main import app as notification_app
 from opsmind_remediation_engine.main import create_app as create_remediation_app
-from opsmind_worker.main import app as worker_app
+from opsmind_worker.main import create_app as create_worker_app
 from pydantic import SecretStr
+from redis import Redis
 from sqlalchemy import create_engine
 from sqlalchemy import event as sqlalchemy_event
 from sqlalchemy.exc import OperationalError
@@ -34,6 +37,15 @@ _remediation_health_sessions = sessionmaker(bind=_remediation_health_engine, cla
 remediation_app = create_remediation_app(session_factory=_remediation_health_sessions)
 detection_app = create_detection_app(
     Settings(event_ingestion_token=SecretStr("unit-test-token-with-sufficient-length"))
+)
+_worker_health_engine = create_engine("sqlite://", poolclass=StaticPool)
+_worker_health_sessions = sessionmaker(bind=_worker_health_engine, class_=Session)
+_worker_health_redis = Mock(spec=Redis)
+worker_app = create_worker_app(
+    Settings(database_url="sqlite://"),
+    session_factory=_worker_health_sessions,
+    redis_client=cast(Redis, _worker_health_redis),
+    run_consumer=False,
 )
 
 SERVICES: tuple[tuple[str, ASGIApp], ...] = (

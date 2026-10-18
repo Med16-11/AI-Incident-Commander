@@ -27,28 +27,47 @@ from opsmind_storage.database import create_database_engine, create_session_fact
 from opsmind_storage.event_inbox import SqlAlchemyEventUnitOfWorkFactory
 from redis import Redis
 from sqlalchemy import text
+from sqlalchemy.orm import Session, sessionmaker
 from starlette.types import ASGIApp
 
 from opsmind_worker.incident_projection import IncidentProjectionHandler
 
 
-def create_app(settings: Settings | None = None) -> ASGIApp:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    session_factory: sessionmaker[Session] | None = None,
+    redis_client: Redis | None = None,
+    run_consumer: bool = True,
+) -> ASGIApp:
     """Compose the worker consumer, transactional storage, and health endpoints."""
     configuration = settings or Settings()
     configure_logging(configuration)
     logger = structlog.get_logger(service="worker")
-    engine = create_database_engine(configuration.database_url)
-    sessions = create_session_factory(engine)
-    redis_client = Redis.from_url(
-        configuration.redis_url,
-        decode_responses=True,
-        socket_connect_timeout=2,
-        socket_timeout=2,
+    owns_engine = session_factory is None
+    engine = create_database_engine(configuration.database_url) if owns_engine else None
+    sessions = (
+        create_session_factory(engine)
+        if session_factory is None and engine is not None
+        else session_factory
+    )
+    if sessions is None:
+        raise RuntimeError("worker session factory was not initialized")
+    owns_redis = redis_client is None
+    active_redis = (
+        redis_client
+        if redis_client is not None
+        else Redis.from_url(
+            configuration.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
     )
     metrics = ServiceMetrics("worker")
     event_metrics = EventMetrics(metrics.registry)
     consumer = RedisStreamConsumer(
-        cast(RedisStreamsClient, redis_client),
+        cast(RedisStreamsClient, active_redis),
         "opsmind:events",
         "opsmind-incident-projection",
         f"worker-{uuid4().hex[:12]}",
@@ -60,6 +79,8 @@ def create_app(settings: Settings | None = None) -> ASGIApp:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        task: asyncio.Task[None] | None = None
+
         async def consume_forever() -> None:
             while not stopping.is_set():
                 try:
@@ -69,19 +90,23 @@ def create_app(settings: Settings | None = None) -> ASGIApp:
                     with suppress(TimeoutError):
                         await asyncio.wait_for(stopping.wait(), timeout=1.0)
 
-        task = asyncio.create_task(consume_forever(), name="opsmind-incident-event-consumer")
-        logger.info(
-            "event_consumer_started",
-            stream="opsmind:events",
-            consumer_group="opsmind-incident-projection",
-        )
+        if run_consumer:
+            task = asyncio.create_task(consume_forever(), name="opsmind-incident-event-consumer")
+            logger.info(
+                "event_consumer_started",
+                stream="opsmind:events",
+                consumer_group="opsmind-incident-projection",
+            )
         try:
             yield
         finally:
             stopping.set()
-            await task
-            redis_client.close()
-            engine.dispose()
+            if task is not None:
+                await task
+            if owns_redis:
+                active_redis.close()
+            if engine is not None:
+                engine.dispose()
             logger.info("event_consumer_stopped")
 
     app = FastAPI(title="OpsMind Event Worker", version="0.1.0", lifespan=lifespan)
@@ -97,7 +122,7 @@ def create_app(settings: Settings | None = None) -> ASGIApp:
         try:
             with sessions() as session:
                 session.execute(text("SELECT 1"))
-            redis_client.ping()
+            active_redis.ping()
         except Exception:
             return Response(
                 content='{"status":"not_ready","service":"worker"}',
